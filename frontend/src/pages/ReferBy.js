@@ -1,0 +1,3 @@
+import React,{useState} from "react";
+import {Panel} from "../components/Ui";
+export default function ReferBy(){const [rows,setRows]=useState(["John Doe","Rajesh","SCOT Students","Online","Others"]);const [name,setName]=useState("");return <Panel title="Refer By" subtitle="Manage referral sources" action={<div className="inline-form"><input value={name} onChange={e=>setName(e.target.value)} placeholder="Referral source"/><button className="primary" onClick={()=>{if(name){setRows([...rows,name]);setName("")}}}>+ Add Referral</button></div>}><div className="category-grid">{rows.map(x=><div className="category-card" key={x}><div className="category-icon">↗</div><h3>{x}</h3><p>Referral source</p></div>)}</div></Panel>}
