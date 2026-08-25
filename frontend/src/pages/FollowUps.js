@@ -24,6 +24,7 @@ function normalize(item) {
 export default function FollowUps() {
   const [rows, setRows] = useState(fallbackEnquiries);
   const [page, setPage] = useState(1);
+  const [selectedFollowUp, setSelectedFollowUp] = useState(null);
   const today = new Date().toISOString().slice(0, 10);
 
   useEffect(() => {
@@ -50,9 +51,14 @@ export default function FollowUps() {
     ]} />
     <Panel title="Follow-up Schedule" subtitle="Current follow-up data">
       <div className="table-scroll"><table><thead><tr>{["Candidate", "Course", "Last Discussion", "Date", "Status", "Action"].map(header => <th key={header}>{header}</th>)}</tr></thead>
-        <tbody>{visibleRows.map((row, index) => <tr key={`${row.candidate}-${row.date}-${index}`}><td>{row.candidate}</td><td>{row.course}</td><td>{row.discussion}</td><td>{row.date}</td><td><Badge status={row.status} /></td><td><button className="primary small">Follow-up</button></td></tr>)}</tbody>
+        <tbody>{visibleRows.map((row, index) => <tr key={`${row.candidate}-${row.date}-${index}`}><td>{row.candidate}</td><td>{row.course}</td><td>{row.discussion}</td><td>{row.date}</td><td><Badge status={row.status} /></td><td><button className="primary small" onClick={() => setSelectedFollowUp(row)}>Follow-up</button></td></tr>)}</tbody>
       </table></div>
       {activeRows.length === 0 && <div className="empty">No current follow-ups.</div>}
+      {selectedFollowUp && <div className="modal-backdrop" onClick={() => setSelectedFollowUp(null)}><div className="modal" onClick={event => event.stopPropagation()}>
+        <div className="modal-header"><div><h3>{selectedFollowUp.candidate}</h3><p>Previous follow-up details</p></div><button className="modal-close" aria-label="Close follow-up details" onClick={() => setSelectedFollowUp(null)}>X</button></div>
+        <div className="detail-grid"><div><small>Course</small><strong>{selectedFollowUp.course || "Not provided"}</strong></div><div><small>Status</small><Badge status={selectedFollowUp.status} /></div><div><small>Follow-up date</small><strong>{selectedFollowUp.date || "Not scheduled"}</strong></div></div>
+        <div className="followup-note">{selectedFollowUp.discussion || "No previous follow-up discussion recorded."}</div>
+      </div></div>}
       <Pagination page={page} setPage={setPage} total={activeRows.length} />
     </Panel>
   </>;
