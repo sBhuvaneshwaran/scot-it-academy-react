@@ -1,0 +1,60 @@
+{
+  "users": [
+    {
+      "id": "owner",
+      "username": "SCOT",
+      "password": "scotitacademy@2026",
+      "name": "SCOT IT Academy Owner",
+      "role": "Owner"
+    },
+    {
+      "id": "admin-1788426862768-8c88c3",
+      "username": "Bhuva",
+      "password": "Bhuva@007",
+      "name": "Bhuvaneshwaran S",
+      "role": "Admin"
+    }
+  ],
+  "students": [],
+  "enquiries": [
+    {
+      "id": 1,
+      "branch": "Keelkattalai",
+      "admin": "Bhuvaneshwaran S",
+      "enquiry_date": "2026-09-03",
+      "candidate_name": "Bhuvaneshwaran S",
+      "mobile": "9876543210",
+      "city": "Chennai",
+      "degree": "B.SC Computer science ",
+      "passed_year": "2023",
+      "category": "Development",
+      "course": "Python Full Stack",
+      "comments": "FOR ENQUIRY",
+      "next_followup_date": "2026-09-04",
+      "status": "Pending",
+      "referred_by": "SCOT IT Students",
+      "referral_contact": "001"
+    }
+  ],
+  "categories": [
+    "Development"
+  ],
+  "referrals": [
+    {
+      "id": 1788428531419,
+      "name": "Other"
+    }
+  ],
+  "settings": {
+    "academyName": "SCOT IT ACADEMY",
+    "ownerName": "SCOT IT Academy Owner",
+    "defaultLogin": {
+      "username": "SCOT",
+      "password": "root"
+    },
+    "database": {
+      "username": "root",
+      "password": "root"
+    }
+  }
+}
