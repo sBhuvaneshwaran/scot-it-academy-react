@@ -1,6 +1,7 @@
 // ============================================================
 // SCOT IT ACADEMY - BACKEND SERVER
 // Node.js + Express + MySQL
+// Render + Aiven MySQL Ready
 // ============================================================
 
 const express = require("express");
@@ -14,31 +15,64 @@ dotenv.config();
 
 const app = express();
 
-const PORT = process.env.PORT || 5000;
+// ============================================================
+// SERVER CONFIG
+// ============================================================
+
+const PORT = Number(process.env.PORT || 5000);
 
 const JWT_SECRET =
   process.env.JWT_SECRET || "development-only-secret";
 
 // ============================================================
-// DATABASE
+// DATABASE CONFIG
 // ============================================================
 
 const DB_CONFIG = {
   host: process.env.DB_HOST || "localhost",
-  port: Number(process.env.DB_PORT || 3306),
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "student_management",
+
+  port: Number(
+    process.env.DB_PORT || 3306
+  ),
+
+  user:
+    process.env.DB_USER || "root",
+
+  password:
+    process.env.DB_PASSWORD || "",
+
+  database:
+    process.env.DB_NAME || "student_management",
 
   waitForConnections: true,
-  connectionLimit: 10,
 
-  // IMPORTANT
-  // MySQL DATE will remain YYYY-MM-DD
+  connectionLimit: Number(
+    process.env.DB_CONNECTION_LIMIT || 10
+  ),
+
+  queueLimit: 0,
+
+  // Keep MySQL DATE values as YYYY-MM-DD strings
   dateStrings: true,
 
   charset: "utf8mb4",
+
+  // ==========================================================
+  // AIVEN / CLOUD MYSQL SSL
+  // ==========================================================
+
+  ssl:
+    process.env.DB_SSL === "true" ||
+    process.env.DB_HOST
+      ? {
+          rejectUnauthorized: false,
+        }
+      : undefined,
 };
+
+// ============================================================
+// DATABASE POOL
+// ============================================================
 
 const db = mysql.createPool(DB_CONFIG);
 
@@ -50,42 +84,107 @@ function text(value) {
   return String(value ?? "").trim();
 }
 
+// ------------------------------------------------------------
+// Amount helper
+// ------------------------------------------------------------
+
 function amount(value, fallback = 0) {
-  return Number.isFinite(Number(value))
-    ? Number(value)
+  const number = Number(value);
+
+  return Number.isFinite(number)
+    ? number
     : fallback;
 }
 
+// ------------------------------------------------------------
+// Date helper
+// ------------------------------------------------------------
+
 function dateOnly(value) {
-  if (!value) return null;
+  if (value === null || value === undefined) {
+    return null;
+  }
 
-  const valueString = String(value).trim();
+  // Date object
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) {
+      return null;
+    }
 
-  if (!valueString) return null;
+    return value
+      .toISOString()
+      .slice(0, 10);
+  }
+
+  const valueString =
+    String(value).trim();
+
+  if (!valueString) {
+    return null;
+  }
 
   // YYYY-MM-DD
-  if (/^\d{4}-\d{2}-\d{2}$/.test(valueString)) {
+  if (
+    /^\d{4}-\d{2}-\d{2}$/.test(
+      valueString
+    )
+  ) {
     return valueString;
   }
 
-  // ISO
+  // ISO datetime
+  //
   // 2026-09-04T18:30:00.000Z
-  if (/^\d{4}-\d{2}-\d{2}T/.test(valueString)) {
-    return valueString.substring(0, 10);
+  //
+  if (
+    /^\d{4}-\d{2}-\d{2}T/.test(
+      valueString
+    )
+  ) {
+    return valueString.substring(
+      0,
+      10
+    );
+  }
+
+  // YYYY-MM-DD HH:mm:ss
+  if (
+    /^\d{4}-\d{2}-\d{2} /.test(
+      valueString
+    )
+  ) {
+    return valueString.substring(
+      0,
+      10
+    );
   }
 
   // DD-MM-YYYY
-  if (/^\d{2}-\d{2}-\d{4}$/.test(valueString)) {
-    const [day, month, year] =
-      valueString.split("-");
+  if (
+    /^\d{2}-\d{2}-\d{4}$/.test(
+      valueString
+    )
+  ) {
+    const [
+      day,
+      month,
+      year,
+    ] = valueString.split("-");
 
     return `${year}-${month}-${day}`;
   }
 
   // DD/MM/YYYY
-  if (/^\d{2}\/\d{2}\/\d{4}$/.test(valueString)) {
-    const [day, month, year] =
-      valueString.split("/");
+  if (
+    /^\d{2}\/\d{2}\/\d{4}$/.test(
+      valueString
+    )
+  ) {
+    const [
+      day,
+      month,
+      year,
+    ] = valueString.split("/");
 
     return `${year}-${month}-${day}`;
   }
@@ -93,8 +192,20 @@ function dateOnly(value) {
   return null;
 }
 
-async function first(sql, params = []) {
-  const [rows] = await db.execute(sql, params);
+// ------------------------------------------------------------
+// First row helper
+// ------------------------------------------------------------
+
+async function first(
+  sql,
+  params = []
+) {
+  const [rows] =
+    await db.execute(
+      sql,
+      params
+    );
+
   return rows[0];
 }
 
@@ -123,7 +234,9 @@ function issueToken(user) {
       name: user.name,
       role: user.role,
     },
+
     JWT_SECRET,
+
     {
       expiresIn: "7d",
     }
@@ -134,12 +247,18 @@ function issueToken(user) {
 // AUTH MIDDLEWARE
 // ============================================================
 
-function auth(req, res, next) {
+function auth(
+  req,
+  res,
+  next
+) {
   const header =
     req.headers.authorization || "";
 
   const token =
-    header.startsWith("Bearer ")
+    header.startsWith(
+      "Bearer "
+    )
       ? header.slice(7)
       : "";
 
@@ -150,10 +269,11 @@ function auth(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(
-      token,
-      JWT_SECRET
-    );
+    req.user =
+      jwt.verify(
+        token,
+        JWT_SECRET
+      );
 
     next();
   } catch (error) {
@@ -167,10 +287,18 @@ function auth(req, res, next) {
 // OWNER ONLY
 // ============================================================
 
-function ownerOnly(req, res, next) {
-  if (req.user?.role !== "Owner") {
+function ownerOnly(
+  req,
+  res,
+  next
+) {
+  if (
+    req.user?.role !==
+    "Owner"
+  ) {
     return res.status(403).json({
-      message: "Owner access required.",
+      message:
+        "Owner access required.",
     });
   }
 
@@ -182,7 +310,12 @@ function ownerOnly(req, res, next) {
 // ============================================================
 
 function mapStudent(row) {
-  const paidFee = amount(row.paid_fee);
+  if (!row) {
+    return null;
+  }
+
+  const paidFee =
+    amount(row.paid_fee);
 
   const balanceFee =
     amount(row.balance_fee);
@@ -194,24 +327,33 @@ function mapStudent(row) {
     );
 
   const nextFollowUpDate =
-    dateOnly(row.next_followup_date);
+    dateOnly(
+      row.next_followup_date
+    );
 
   return {
     id: row.id,
 
-    studentId: row.student_id,
+    studentId:
+      row.student_id,
 
-    name: row.name,
+    name:
+      row.name,
 
-    course: row.course,
+    course:
+      row.course,
 
-    mobile: row.mobile,
+    mobile:
+      row.mobile,
 
-    email: row.email,
+    email:
+      row.email,
 
-    city: row.city,
+    city:
+      row.city,
 
-    category: row.category,
+    category:
+      row.category,
 
     paidFee,
 
@@ -219,16 +361,23 @@ function mapStudent(row) {
 
     totalFee,
 
-    dueDate: dateOnly(row.due_date),
+    dueDate:
+      dateOnly(
+        row.due_date
+      ),
 
-    joinDate: dateOnly(row.join_date),
+    joinDate:
+      dateOnly(
+        row.join_date
+      ),
 
     nextFollowUpDate,
 
     next_followup_date:
       nextFollowUpDate,
 
-    status: row.status,
+    status:
+      row.status,
   };
 }
 
@@ -243,18 +392,54 @@ app.use(
   })
 );
 
-app.use(express.json());
+// ============================================================
+// BODY PARSER
+// ============================================================
+
+app.use(
+  express.json({
+    limit: "2mb",
+  })
+);
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
 
 // ============================================================
 // HEALTH
 // ============================================================
 
-app.get("/health", (req, res) => {
-  res.json({
-    status: "ok",
-    service: "SCOT IT Academy API",
-  });
-});
+app.get(
+  "/health",
+  async (req, res) => {
+    try {
+      await db.query(
+        "SELECT 1 AS ok"
+      );
+
+      res.json({
+        status: "ok",
+        service:
+          "SCOT IT Academy API",
+        database:
+          "connected",
+      });
+    } catch (error) {
+      res.status(500).json({
+        status: "error",
+        service:
+          "SCOT IT Academy API",
+        database:
+          "disconnected",
+        message:
+          error.message,
+      });
+    }
+  }
+);
 
 // ============================================================
 // AUTH - LOGIN
@@ -262,44 +447,45 @@ app.get("/health", (req, res) => {
 
 app.post(
   "/api/auth/login",
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      const username = text(
-        req.body?.username
-      );
+      const username =
+        text(
+          req.body?.username
+        );
 
       const password =
         req.body?.password || "";
 
-      // --------------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------------
-
-      if (!username || !password) {
+      if (
+        !username ||
+        !password
+      ) {
         return res.status(400).json({
           message:
             "Username and password are required.",
         });
       }
 
-      // --------------------------------------------------------
-      // FIND USER
-      // --------------------------------------------------------
-
-      const user = await first(
-        `
-        SELECT
-          id,
-          username,
-          password_hash,
-          name,
-          role
-        FROM users
-        WHERE LOWER(username)=LOWER(?)
-        LIMIT 1
-        `,
-        [username]
-      );
+      const user =
+        await first(
+          `
+          SELECT
+            id,
+            username,
+            password_hash,
+            name,
+            role
+          FROM users
+          WHERE LOWER(username)=LOWER(?)
+          LIMIT 1
+          `,
+          [username]
+        );
 
       if (!user) {
         return res.status(401).json({
@@ -307,10 +493,6 @@ app.post(
             "Invalid username or password.",
         });
       }
-
-      // --------------------------------------------------------
-      // CHECK PASSWORD
-      // --------------------------------------------------------
 
       const validPassword =
         await bcrypt.compare(
@@ -325,55 +507,45 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
-      // CREATE JWT
-      // --------------------------------------------------------
-
       const access =
         issueToken(user);
 
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
-      res.json({
+      return res.json({
         access,
-        user: publicUser(user),
-      });
 
+        user:
+          publicUser(user),
+      });
     } catch (error) {
       next(error);
     }
   }
 );
 
-
 // ============================================================
-// AUTH - OLD SIGNUP
-// ============================================================
-// Keep this route for compatibility with your existing
-// frontend/admin setup.
+// AUTH - SIGNUP / OWNER SETUP
 // ============================================================
 
 app.post(
   "/api/auth/signup",
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
+      const name =
+        text(
+          req.body?.name
+        );
 
-      const name = text(
-        req.body?.name
-      );
-
-      const username = text(
-        req.body?.username
-      );
+      const username =
+        text(
+          req.body?.username
+        );
 
       const password =
         req.body?.password || "";
-
-      // --------------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------------
 
       if (!name) {
         return res.status(400).json({
@@ -396,16 +568,14 @@ app.post(
         });
       }
 
-      if (password.length < 6) {
+      if (
+        password.length < 6
+      ) {
         return res.status(400).json({
           message:
             "Password must contain at least 6 characters.",
         });
       }
-
-      // --------------------------------------------------------
-      // CHECK USERNAME
-      // --------------------------------------------------------
 
       const usernameOwner =
         await first(
@@ -420,24 +590,16 @@ app.post(
           [username]
         );
 
-      /*
-       * If username belongs to another user,
-       * do not allow Owner to use it.
-       */
-
       if (
         usernameOwner &&
-        usernameOwner.role !== "Owner"
+        usernameOwner.role !==
+          "Owner"
       ) {
         return res.status(409).json({
           message:
             "This username is already used by an administrator.",
         });
       }
-
-      // --------------------------------------------------------
-      // FIND OWNER
-      // --------------------------------------------------------
 
       const owner =
         await first(
@@ -450,10 +612,6 @@ app.post(
           `
         );
 
-      // --------------------------------------------------------
-      // HASH PASSWORD
-      // --------------------------------------------------------
-
       const passwordHash =
         await bcrypt.hash(
           password,
@@ -462,12 +620,7 @@ app.post(
 
       let ownerId;
 
-      // --------------------------------------------------------
-      // UPDATE EXISTING OWNER
-      // --------------------------------------------------------
-
       if (owner) {
-
         ownerId =
           owner.id;
 
@@ -488,15 +641,7 @@ app.post(
             owner.id,
           ]
         );
-
-      }
-
-      // --------------------------------------------------------
-      // CREATE OWNER
-      // --------------------------------------------------------
-
-      else {
-
+      } else {
         const [result] =
           await db.execute(
             `
@@ -519,10 +664,6 @@ app.post(
         ownerId =
           result.insertId;
       }
-
-      // --------------------------------------------------------
-      // GET UPDATED OWNER
-      // --------------------------------------------------------
 
       const updatedOwner =
         await first(
@@ -547,16 +688,12 @@ app.post(
         });
       }
 
-      // --------------------------------------------------------
-      // NEW TOKEN
-      // --------------------------------------------------------
-
       const access =
         issueToken(
           updatedOwner
         );
 
-      res.json({
+      return res.json({
         message:
           "Owner account updated successfully.",
 
@@ -567,10 +704,7 @@ app.post(
             updatedOwner
           ),
       });
-
     } catch (error) {
-
-      // Duplicate username
       if (
         error?.code ===
         "ER_DUP_ENTRY"
@@ -586,26 +720,20 @@ app.post(
   }
 );
 
-
 // ============================================================
 // AUTH - UPDATE OWNER USERNAME
-// ============================================================
-// Current password MUST be correct.
-// Owner Name is NOT changed.
 // ============================================================
 
 app.put(
   "/api/auth/update-owner",
   auth,
   ownerOnly,
-  async (req, res, next) => {
-
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-
-      // --------------------------------------------------------
-      // GET DATA
-      // --------------------------------------------------------
-
       const username =
         text(
           req.body?.username
@@ -614,10 +742,6 @@ app.put(
       const currentPassword =
         req.body?.current_password ||
         "";
-
-      // --------------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------------
 
       if (!username) {
         return res.status(400).json({
@@ -632,10 +756,6 @@ app.put(
             "Please enter your current password.",
         });
       }
-
-      // --------------------------------------------------------
-      // FIND CURRENT OWNER
-      // --------------------------------------------------------
 
       const owner =
         await first(
@@ -661,10 +781,6 @@ app.put(
         });
       }
 
-      // --------------------------------------------------------
-      // CHECK CURRENT PASSWORD
-      // --------------------------------------------------------
-
       const validPassword =
         await bcrypt.compare(
           currentPassword,
@@ -672,21 +788,11 @@ app.put(
         );
 
       if (!validPassword) {
-
-        /*
-         * IMPORTANT:
-         * DO NOT UPDATE USERNAME.
-         */
-
         return res.status(401).json({
           message:
             "Current password is incorrect. Owner username was not changed.",
         });
       }
-
-      // --------------------------------------------------------
-      // CHECK USERNAME
-      // --------------------------------------------------------
 
       const existingUser =
         await first(
@@ -702,32 +808,21 @@ app.put(
           [username]
         );
 
-      /*
-       * If another user already owns this username,
-       * don't update.
-       */
-
       if (
         existingUser &&
         Number(existingUser.id) !==
           Number(owner.id)
       ) {
-
         return res.status(409).json({
           message:
             "This username is already in use.",
         });
       }
 
-      // --------------------------------------------------------
-      // UPDATE USERNAME
-      // --------------------------------------------------------
-
       await db.execute(
         `
         UPDATE users
-        SET
-          username=?
+        SET username=?
         WHERE id=?
           AND role='Owner'
         `,
@@ -736,10 +831,6 @@ app.put(
           owner.id,
         ]
       );
-
-      // --------------------------------------------------------
-      // GET UPDATED OWNER
-      // --------------------------------------------------------
 
       const updatedOwner =
         await first(
@@ -757,25 +848,10 @@ app.put(
           [owner.id]
         );
 
-      if (!updatedOwner) {
-        return res.status(500).json({
-          message:
-            "Owner username was not saved.",
-        });
-      }
-
-      // --------------------------------------------------------
-      // CREATE NEW TOKEN
-      // --------------------------------------------------------
-
       const access =
         issueToken(
           updatedOwner
         );
-
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
 
       return res.json({
         message:
@@ -788,15 +864,11 @@ app.put(
             updatedOwner
           ),
       });
-
     } catch (error) {
-
-      // Duplicate username
       if (
         error?.code ===
         "ER_DUP_ENTRY"
       ) {
-
         return res.status(409).json({
           message:
             "This username is already in use.",
@@ -808,25 +880,20 @@ app.put(
   }
 );
 
-
 // ============================================================
 // AUTH - UPDATE OWNER PASSWORD
-// ============================================================
-// Current password MUST be correct.
 // ============================================================
 
 app.put(
   "/api/auth/update-password",
   auth,
   ownerOnly,
-  async (req, res, next) => {
-
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-
-      // --------------------------------------------------------
-      // GET DATA
-      // --------------------------------------------------------
-
       const currentPassword =
         req.body?.current_password ||
         "";
@@ -834,10 +901,6 @@ app.put(
       const newPassword =
         req.body?.new_password ||
         "";
-
-      // --------------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------------
 
       if (!currentPassword) {
         return res.status(400).json({
@@ -853,7 +916,9 @@ app.put(
         });
       }
 
-      if (newPassword.length < 6) {
+      if (
+        newPassword.length < 6
+      ) {
         return res.status(400).json({
           message:
             "New password must contain at least 6 characters.",
@@ -870,10 +935,6 @@ app.put(
         });
       }
 
-      // --------------------------------------------------------
-      // FIND OWNER
-      // --------------------------------------------------------
-
       const owner =
         await first(
           `
@@ -898,10 +959,6 @@ app.put(
         });
       }
 
-      // --------------------------------------------------------
-      // CHECK CURRENT PASSWORD
-      // --------------------------------------------------------
-
       const validPassword =
         await bcrypt.compare(
           currentPassword,
@@ -909,21 +966,11 @@ app.put(
         );
 
       if (!validPassword) {
-
-        /*
-         * IMPORTANT:
-         * DO NOT UPDATE PASSWORD.
-         */
-
         return res.status(401).json({
           message:
             "Current password is incorrect. Password was not changed.",
         });
       }
-
-      // --------------------------------------------------------
-      // HASH NEW PASSWORD
-      // --------------------------------------------------------
 
       const newPasswordHash =
         await bcrypt.hash(
@@ -931,15 +978,10 @@ app.put(
           12
         );
 
-      // --------------------------------------------------------
-      // UPDATE PASSWORD
-      // --------------------------------------------------------
-
       await db.execute(
         `
         UPDATE users
-        SET
-          password_hash=?
+        SET password_hash=?
         WHERE id=?
           AND role='Owner'
         `,
@@ -948,10 +990,6 @@ app.put(
           owner.id,
         ]
       );
-
-      // --------------------------------------------------------
-      // GET UPDATED OWNER
-      // --------------------------------------------------------
 
       const updatedOwner =
         await first(
@@ -969,28 +1007,12 @@ app.put(
           [owner.id]
         );
 
-      if (!updatedOwner) {
-        return res.status(500).json({
-          message:
-            "Password was not saved.",
-        });
-      }
-
-      // --------------------------------------------------------
-      // NEW JWT
-      // --------------------------------------------------------
-
       const access =
         issueToken(
           updatedOwner
         );
 
-      // --------------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------------
-
       return res.json({
-
         message:
           "Password updated successfully.",
 
@@ -1001,13 +1023,11 @@ app.put(
             updatedOwner
           ),
       });
-
     } catch (error) {
       next(error);
     }
   }
 );
-
 
 // ============================================================
 // AUTH - ME
@@ -1016,10 +1036,12 @@ app.put(
 app.get(
   "/api/auth/me",
   auth,
-  async (req, res, next) => {
-
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-
       const user =
         await first(
           `
@@ -1042,10 +1064,9 @@ app.get(
         });
       }
 
-      res.json(
+      return res.json(
         publicUser(user)
       );
-
     } catch (error) {
       next(error);
     }
@@ -1059,7 +1080,11 @@ app.get(
 app.get(
   "/api/students",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -1070,7 +1095,7 @@ app.get(
           `
         );
 
-      res.json(
+      return res.json(
         rows.map(mapStudent)
       );
     } catch (error) {
@@ -1086,7 +1111,11 @@ app.get(
 app.get(
   "/api/students/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const row =
         await first(
@@ -1105,11 +1134,14 @@ app.get(
 
       if (!row) {
         return res.status(404).json({
-          message: "Student not found.",
+          message:
+            "Student not found.",
         });
       }
 
-      res.json(mapStudent(row));
+      return res.json(
+        mapStudent(row)
+      );
     } catch (error) {
       next(error);
     }
@@ -1123,44 +1155,51 @@ app.get(
 app.post(
   "/api/students",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      const b = req.body || {};
+      const b =
+        req.body || {};
 
       const paid =
         amount(
           b.paidFee ??
-          b.paid_fee
+            b.paid_fee
         );
 
       const balance =
         amount(
           b.balanceFee ??
-          b.balance_fee
+            b.balance_fee
         );
 
       const total =
         amount(
           b.totalFee ??
-          b.total_fee,
+            b.total_fee,
           paid + balance
         );
 
       const studentId =
-        b.studentId ||
-        b.student_id ||
+        text(
+          b.studentId ??
+            b.student_id
+        ) ||
         `ST-${Date.now()}`;
 
       const dueDate =
         dateOnly(
           b.dueDate ??
-          b.due_date
+            b.due_date
         );
 
       const joinDate =
         dateOnly(
           b.joinDate ??
-          b.join_date
+            b.join_date
         ) ||
         new Date()
           .toISOString()
@@ -1169,12 +1208,39 @@ app.post(
       const nextFollowUpDate =
         dateOnly(
           b.nextFollowUpDate ??
-          b.next_followup_date ??
-          b.next_follow_up_date
+            b.next_followup_date ??
+            b.next_follow_up_date
         );
 
       const status =
-        b.status || "Joined";
+        text(b.status) ||
+        "Joined";
+
+      const name =
+        text(
+          b.name ??
+            b.candidate_name
+        );
+
+      const mobile =
+        text(
+          b.mobile ??
+            b.mobile_no
+        );
+
+      if (!name) {
+        return res.status(400).json({
+          message:
+            "Student name is required.",
+        });
+      }
+
+      if (!mobile) {
+        return res.status(400).json({
+          message:
+            "Mobile number is required.",
+        });
+      }
 
       const [result] =
         await db.execute(
@@ -1201,16 +1267,12 @@ app.post(
           `,
           [
             studentId,
-            b.name ||
-              b.candidate_name ||
-              "",
-            b.course || "",
-            b.mobile ||
-              b.mobile_no ||
-              "",
-            b.email || "",
-            b.city || "",
-            b.category || "",
+            name,
+            text(b.course),
+            mobile,
+            text(b.email),
+            text(b.city),
+            text(b.category),
             paid,
             balance,
             total,
@@ -1231,10 +1293,20 @@ app.post(
           [result.insertId]
         );
 
-      res.status(201).json(
+      return res.status(201).json(
         mapStudent(saved)
       );
     } catch (error) {
+      if (
+        error?.code ===
+        "ER_DUP_ENTRY"
+      ) {
+        return res.status(409).json({
+          message:
+            "Student ID already exists.",
+        });
+      }
+
       next(error);
     }
   }
@@ -1247,7 +1319,11 @@ app.post(
 app.patch(
   "/api/students/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const current =
         await first(
@@ -1266,90 +1342,123 @@ app.patch(
 
       if (!current) {
         return res.status(404).json({
-          message: "Student not found.",
+          message:
+            "Student not found.",
         });
       }
 
-      const b = req.body || {};
+      const b =
+        req.body || {};
 
       const paid =
         amount(
           b.paidFee ??
-          b.paid_fee ??
-          current.paid_fee
+            b.paid_fee ??
+            current.paid_fee
         );
 
       const balance =
         amount(
           b.balanceFee ??
-          b.balance_fee ??
-          current.balance_fee
+            b.balance_fee ??
+            current.balance_fee
         );
 
       const total =
         amount(
           b.totalFee ??
-          b.total_fee,
+            b.total_fee,
           paid + balance
         );
 
       const studentId =
-        b.studentId ??
-        b.student_id ??
-        current.student_id;
+        text(
+          b.studentId ??
+            b.student_id ??
+            current.student_id
+        );
 
       const name =
-        b.name ??
-        b.candidate_name ??
-        current.name;
+        text(
+          b.name ??
+            b.candidate_name ??
+            current.name
+        );
 
       const course =
-        b.course ??
-        current.course;
+        text(
+          b.course ??
+            current.course
+        );
 
       const mobile =
-        b.mobile ??
-        b.mobile_no ??
-        current.mobile;
+        text(
+          b.mobile ??
+            b.mobile_no ??
+            current.mobile
+        );
 
       const email =
-        b.email ??
-        current.email;
+        text(
+          b.email ??
+            current.email
+        );
 
       const city =
-        b.city ??
-        current.city;
+        text(
+          b.city ??
+            current.city
+        );
 
       const category =
-        b.category ??
-        current.category;
+        text(
+          b.category ??
+            current.category
+        );
 
       const dueDate =
-        dateOnly(
-          b.dueDate ??
-          b.due_date ??
-          current.due_date
-        );
+        b.dueDate !== undefined ||
+        b.due_date !== undefined
+          ? dateOnly(
+              b.dueDate ??
+                b.due_date
+            )
+          : dateOnly(
+              current.due_date
+            );
 
       const joinDate =
-        dateOnly(
-          b.joinDate ??
-          b.join_date ??
-          current.join_date
-        );
+        b.joinDate !== undefined ||
+        b.join_date !== undefined
+          ? dateOnly(
+              b.joinDate ??
+                b.join_date
+            )
+          : dateOnly(
+              current.join_date
+            );
 
       const nextFollowUpDate =
-        dateOnly(
-          b.nextFollowUpDate ??
-          b.next_followup_date ??
-          b.next_follow_up_date ??
-          current.next_followup_date
-        );
+        b.nextFollowUpDate !==
+          undefined ||
+        b.next_followup_date !==
+          undefined ||
+        b.next_follow_up_date !==
+          undefined
+          ? dateOnly(
+              b.nextFollowUpDate ??
+                b.next_followup_date ??
+                b.next_follow_up_date
+            )
+          : dateOnly(
+              current.next_followup_date
+            );
 
       const status =
-        b.status ??
-        current.status ??
-        "Joined";
+        text(
+          b.status ??
+            current.status
+        ) || "Joined";
 
       await db.execute(
         `
@@ -1400,10 +1509,20 @@ app.patch(
           [current.id]
         );
 
-      res.json(
+      return res.json(
         mapStudent(updated)
       );
     } catch (error) {
+      if (
+        error?.code ===
+        "ER_DUP_ENTRY"
+      ) {
+        return res.status(409).json({
+          message:
+            "Student ID already exists.",
+        });
+      }
+
       next(error);
     }
   }
@@ -1416,21 +1535,35 @@ app.patch(
 app.delete(
   "/api/students/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      await db.execute(
-        `
-        DELETE FROM students
-        WHERE id=?
-           OR student_id=?
-        `,
-        [
-          req.params.id,
-          req.params.id,
-        ]
-      );
+      const [result] =
+        await db.execute(
+          `
+          DELETE FROM students
+          WHERE id=?
+             OR student_id=?
+          `,
+          [
+            req.params.id,
+            req.params.id,
+          ]
+        );
 
-      res.json({
+      if (
+        result.affectedRows === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Student not found.",
+        });
+      }
+
+      return res.json({
         deleted: true,
       });
     } catch (error) {
@@ -1442,14 +1575,15 @@ app.delete(
 // ============================================================
 // ENQUIRIES - GET ALL
 // ============================================================
-// IMPORTANT:
-// Use db.query(), NOT pool.query().
-// ============================================================
 
 app.get(
   "/api/enquiries",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -1478,18 +1612,22 @@ app.get(
           `
         );
 
-      res.json(
-        rows.map((row) => ({
-          ...row,
+      return res.json(
+        rows.map(
+          (row) => ({
+            ...row,
 
-          enquiry_date:
-            dateOnly(row.enquiry_date),
+            enquiry_date:
+              dateOnly(
+                row.enquiry_date
+              ),
 
-          next_followup_date:
-            dateOnly(
-              row.next_followup_date
-            ),
-        }))
+            next_followup_date:
+              dateOnly(
+                row.next_followup_date
+              ),
+          })
+        )
       );
     } catch (error) {
       console.error(
@@ -1509,7 +1647,11 @@ app.get(
 app.get(
   "/api/enquiries/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const row =
         await first(
@@ -1524,19 +1666,22 @@ app.get(
 
       if (!row) {
         return res.status(404).json({
-          message: "Enquiry not found",
+          message:
+            "Enquiry not found.",
         });
       }
 
       row.enquiry_date =
-        dateOnly(row.enquiry_date);
+        dateOnly(
+          row.enquiry_date
+        );
 
       row.next_followup_date =
         dateOnly(
           row.next_followup_date
         );
 
-      res.json(row);
+      return res.json(row);
     } catch (error) {
       next(error);
     }
@@ -1550,20 +1695,25 @@ app.get(
 app.post(
   "/api/enquiries",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      const b = req.body || {};
+      const b =
+        req.body || {};
 
       const branch =
-        b.branch || "";
+        text(b.branch);
 
       const admin =
-        b.admin || "";
+        text(b.admin);
 
       const enquiryDate =
         dateOnly(
           b.enquiry_date ??
-          b.enquiryDate
+            b.enquiryDate
         ) ||
         new Date()
           .toISOString()
@@ -1572,62 +1722,70 @@ app.post(
       const candidateName =
         text(
           b.candidate_name ??
-          b.candidateName
+            b.candidateName
         );
 
       const mobile =
-        text(b.mobile);
+        text(
+          b.mobile ??
+            b.mobile_no
+        );
 
       const city =
-        b.city || "";
+        text(b.city);
 
       const degree =
-        b.degree || "";
+        text(b.degree);
 
       const passedYear =
-        b.passed_year ??
-        b.passedYear ??
-        "";
+        text(
+          b.passed_year ??
+            b.passedYear
+        );
 
       const category =
-        b.category || "";
+        text(b.category);
 
       const course =
-        b.course || "";
+        text(b.course);
 
       const comments =
-        b.comments || "";
+        text(b.comments);
 
       const followUpDate =
         dateOnly(
           b.next_followup_date ??
-          b.nextFollowupDate
+            b.nextFollowupDate ??
+            b.next_follow_up_date
         );
 
       const status =
-        b.status || "Pending";
+        text(b.status) ||
+        "Pending";
 
       const referredBy =
-        b.referred_by ??
-        b.referredBy ??
-        "";
+        text(
+          b.referred_by ??
+            b.referredBy
+        );
 
       const referralContact =
-        b.referral_contact ??
-        b.referralContact ??
-        "";
+        text(
+          b.referral_contact ??
+            b.referralContact
+        );
 
       if (!candidateName) {
         return res.status(400).json({
           message:
-            "Candidate name is required",
+            "Candidate name is required.",
         });
       }
 
       if (!mobile) {
         return res.status(400).json({
           message:
-            "Mobile number is required",
+            "Mobile number is required.",
         });
       }
 
@@ -1686,14 +1844,18 @@ app.post(
         );
 
       row.enquiry_date =
-        dateOnly(row.enquiry_date);
+        dateOnly(
+          row.enquiry_date
+        );
 
       row.next_followup_date =
         dateOnly(
           row.next_followup_date
         );
 
-      res.status(201).json(row);
+      return res.status(201).json(
+        row
+      );
     } catch (error) {
       console.error(
         "POST /api/enquiries error:",
@@ -1712,9 +1874,14 @@ app.post(
 app.patch(
   "/api/enquiries/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      const id = req.params.id;
+      const id =
+        req.params.id;
 
       const old =
         await first(
@@ -1730,87 +1897,129 @@ app.patch(
       if (!old) {
         return res.status(404).json({
           message:
-            "Enquiry not found",
+            "Enquiry not found.",
         });
       }
 
-      const b = req.body || {};
+      const b =
+        req.body || {};
 
       const branch =
-        b.branch ??
-        old.branch;
+        text(
+          b.branch ??
+            old.branch
+        );
 
       const admin =
-        b.admin ??
-        old.admin;
+        text(
+          b.admin ??
+            old.admin
+        );
 
       const enquiryDate =
-        b.enquiry_date !== undefined
-          ? dateOnly(b.enquiry_date)
-          : b.enquiryDate !== undefined
-          ? dateOnly(b.enquiryDate)
-          : dateOnly(old.enquiry_date);
+        b.enquiry_date !==
+        undefined
+          ? dateOnly(
+              b.enquiry_date
+            )
+          : b.enquiryDate !==
+            undefined
+          ? dateOnly(
+              b.enquiryDate
+            )
+          : dateOnly(
+              old.enquiry_date
+            );
 
       const candidateName =
-        b.candidate_name ??
-        b.candidateName ??
-        old.candidate_name;
+        text(
+          b.candidate_name ??
+            b.candidateName ??
+            old.candidate_name
+        );
 
       const mobile =
-        b.mobile ??
-        old.mobile;
+        text(
+          b.mobile ??
+            old.mobile
+        );
 
       const city =
-        b.city ??
-        old.city;
+        text(
+          b.city ??
+            old.city
+        );
 
       const degree =
-        b.degree ??
-        old.degree;
+        text(
+          b.degree ??
+            old.degree
+        );
 
       const passedYear =
-        b.passed_year ??
-        b.passedYear ??
-        old.passed_year;
+        text(
+          b.passed_year ??
+            b.passedYear ??
+            old.passed_year
+        );
 
       const category =
-        b.category ??
-        old.category;
+        text(
+          b.category ??
+            old.category
+        );
 
       const course =
-        b.course ??
-        old.course;
+        text(
+          b.course ??
+            old.course
+        );
 
       const comments =
-        b.comments ??
-        old.comments;
+        text(
+          b.comments ??
+            old.comments
+        );
 
       const followUpDate =
-        b.next_followup_date !== undefined
+        b.next_followup_date !==
+        undefined
           ? dateOnly(
               b.next_followup_date
             )
-          : b.nextFollowupDate !== undefined
+          : b.nextFollowupDate !==
+            undefined
           ? dateOnly(
               b.nextFollowupDate
+            )
+          : b.next_follow_up_date !==
+            undefined
+          ? dateOnly(
+              b.next_follow_up_date
             )
           : dateOnly(
               old.next_followup_date
             );
 
       const status =
-        b.status ??
-        old.status;
+        text(
+          b.status ??
+            old.status
+        ) || "Pending";
 
       const referredBy =
-        b.referred_by ??
-        b.referredBy ??
-        old.referred_by;
+        text(
+          b.referred_by ??
+            b.referredBy ??
+            old.referred_by
+        );
 
       const referralContact =
-        b.referral_contact ??
-        b.referralContact ??
-        old.referral_contact;
+        text(
+          b.referral_contact ??
+            b.referralContact ??
+            old.referral_contact
+        );
 
       await db.execute(
         `
@@ -1875,7 +2084,9 @@ app.patch(
           updated.next_followup_date
         );
 
-      res.json(updated);
+      return res.json(
+        updated
+      );
     } catch (error) {
       console.error(
         "PATCH /api/enquiries/:id error:",
@@ -1894,7 +2105,11 @@ app.patch(
 app.delete(
   "/api/enquiries/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [result] =
         await db.execute(
@@ -1905,16 +2120,20 @@ app.delete(
           [req.params.id]
         );
 
-      if (result.affectedRows === 0) {
+      if (
+        result.affectedRows === 0
+      ) {
         return res.status(404).json({
           message:
-            "Enquiry not found",
+            "Enquiry not found.",
         });
       }
 
-      res.json({
+      return res.json({
         deleted: true,
-        id: Number(req.params.id),
+        id: Number(
+          req.params.id
+        ),
       });
     } catch (error) {
       next(error);
@@ -1929,7 +2148,11 @@ app.delete(
 app.get(
   "/api/follow-ups",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -1944,18 +2167,22 @@ app.get(
           `
         );
 
-      res.json(
-        rows.map((row) => ({
-          ...row,
+      return res.json(
+        rows.map(
+          (row) => ({
+            ...row,
 
-          enquiry_date:
-            dateOnly(row.enquiry_date),
+            enquiry_date:
+              dateOnly(
+                row.enquiry_date
+              ),
 
-          next_followup_date:
-            dateOnly(
-              row.next_followup_date
-            ),
-        }))
+            next_followup_date:
+              dateOnly(
+                row.next_followup_date
+              ),
+          })
+        )
       );
     } catch (error) {
       next(error);
@@ -1964,39 +2191,55 @@ app.get(
 );
 
 // ============================================================
-// CATEGORIES
+// CATEGORIES - GET
 // ============================================================
 
 app.get(
   "/api/categories",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
           `
-          SELECT id, name
+          SELECT
+            id,
+            name
           FROM categories
           ORDER BY name
           `
         );
 
-      res.json(rows);
+      return res.json(
+        rows
+      );
     } catch (error) {
       next(error);
     }
   }
 );
 
+// ============================================================
+// CATEGORIES - CREATE
+// ============================================================
+
 app.post(
   "/api/categories",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const name =
         text(
           req.body?.name ||
-          req.body?.category
+            req.body?.category
         );
 
       if (!name) {
@@ -2017,29 +2260,42 @@ app.post(
       const row =
         await first(
           `
-          SELECT id, name
+          SELECT
+            id,
+            name
           FROM categories
           WHERE name=?
+          LIMIT 1
           `,
           [name]
         );
 
-      res.json(row);
+      return res.json(
+        row
+      );
     } catch (error) {
       next(error);
     }
   }
 );
 
+// ============================================================
+// CATEGORIES - UPDATE
+// ============================================================
+
 app.patch(
   "/api/categories/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const name =
         text(
           req.body?.name ||
-          req.body?.category
+            req.body?.category
         );
 
       if (!name) {
@@ -2049,49 +2305,82 @@ app.patch(
         });
       }
 
+      const old =
+        await first(
+          `
+          SELECT
+            id
+          FROM categories
+          WHERE id=?
+          LIMIT 1
+          `,
+          [req.params.id]
+        );
+
+      if (!old) {
+        return res.status(404).json({
+          message:
+            "Category not found.",
+        });
+      }
+
       await db.execute(
         `
         UPDATE categories
         SET name=?
         WHERE id=?
-           OR name=?
         `,
         [
           name,
-          req.params.id,
-          req.params.id,
+          old.id,
         ]
       );
 
-      res.json({
-        id: req.params.id,
+      return res.json({
+        id: old.id,
         name,
       });
     } catch (error) {
+      if (
+        error?.code ===
+        "ER_DUP_ENTRY"
+      ) {
+        return res.status(409).json({
+          message:
+            "This category already exists.",
+        });
+      }
+
       next(error);
     }
   }
 );
 
+// ============================================================
+// CATEGORIES - DELETE
+// ============================================================
+
 app.delete(
   "/api/categories/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      await db.execute(
-        `
-        DELETE FROM categories
-        WHERE id=?
-           OR name=?
-        `,
-        [
-          req.params.id,
-          req.params.id,
-        ]
-      );
+      const [result] =
+        await db.execute(
+          `
+          DELETE FROM categories
+          WHERE id=?
+          `,
+          [req.params.id]
+        );
 
-      res.json({
-        deleted: true,
+      return res.json({
+        deleted:
+          result.affectedRows > 0,
       });
     } catch (error) {
       next(error);
@@ -2100,37 +2389,55 @@ app.delete(
 );
 
 // ============================================================
-// REFERRALS
+// REFERRALS - GET
 // ============================================================
 
 app.get(
   "/api/referrals",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
           `
-          SELECT id, name
+          SELECT
+            id,
+            name
           FROM referrals
           ORDER BY id DESC
           `
         );
 
-      res.json(rows);
+      return res.json(
+        rows
+      );
     } catch (error) {
       next(error);
     }
   }
 );
 
+// ============================================================
+// REFERRALS - CREATE
+// ============================================================
+
 app.post(
   "/api/referrals",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const name =
-        text(req.body?.name);
+        text(
+          req.body?.name
+        );
 
       if (!name) {
         return res.status(400).json({
@@ -2148,8 +2455,10 @@ app.post(
           [name]
         );
 
-      res.json({
-        id: result.insertId,
+      return res.json({
+        id:
+          result.insertId,
+
         name,
       });
     } catch (error) {
@@ -2158,13 +2467,30 @@ app.post(
   }
 );
 
+// ============================================================
+// REFERRALS - UPDATE
+// ============================================================
+
 app.patch(
   "/api/referrals/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const name =
-        text(req.body?.name);
+        text(
+          req.body?.name
+        );
+
+      if (!name) {
+        return res.status(400).json({
+          message:
+            "Referral name is required.",
+        });
+      }
 
       await db.execute(
         `
@@ -2181,7 +2507,9 @@ app.patch(
       const row =
         await first(
           `
-          SELECT id,name
+          SELECT
+            id,
+            name
           FROM referrals
           WHERE id=?
           `,
@@ -2195,28 +2523,40 @@ app.patch(
         });
       }
 
-      res.json(row);
+      return res.json(
+        row
+      );
     } catch (error) {
       next(error);
     }
   }
 );
 
+// ============================================================
+// REFERRALS - DELETE
+// ============================================================
+
 app.delete(
   "/api/referrals/:id",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      await db.execute(
-        `
-        DELETE FROM referrals
-        WHERE id=?
-        `,
-        [req.params.id]
-      );
+      const [result] =
+        await db.execute(
+          `
+          DELETE FROM referrals
+          WHERE id=?
+          `,
+          [req.params.id]
+        );
 
-      res.json({
-        deleted: true,
+      return res.json({
+        deleted:
+          result.affectedRows > 0,
       });
     } catch (error) {
       next(error);
@@ -2225,14 +2565,18 @@ app.delete(
 );
 
 // ============================================================
-// ADMINS
+// ADMINS - GET
 // ============================================================
 
 app.get(
   "/api/admins",
   auth,
   ownerOnly,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -2248,12 +2592,18 @@ app.get(
           `
         );
 
-      res.json(
-        rows.map((row) => ({
-          ...row,
-          role: "Administrator",
-          status: "Active",
-        }))
+      return res.json(
+        rows.map(
+          (row) => ({
+            ...row,
+
+            role:
+              "Administrator",
+
+            status:
+              "Active",
+          })
+        )
       );
     } catch (error) {
       next(error);
@@ -2261,20 +2611,34 @@ app.get(
   }
 );
 
+// ============================================================
+// ADMINS - CREATE
+// ============================================================
+
 app.post(
   "/api/admins",
   auth,
   ownerOnly,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const name =
-        text(req.body?.name);
+        text(
+          req.body?.name
+        );
 
       const username =
-        text(req.body?.username);
+        text(
+          req.body?.username
+        );
 
       const password =
-        text(req.body?.password);
+        text(
+          req.body?.password
+        );
 
       if (
         !name ||
@@ -2287,12 +2651,22 @@ app.post(
         });
       }
 
+      if (
+        password.length < 6
+      ) {
+        return res.status(400).json({
+          message:
+            "Password must contain at least 6 characters.",
+        });
+      }
+
       const exists =
         await first(
           `
           SELECT id
           FROM users
           WHERE LOWER(username)=LOWER(?)
+          LIMIT 1
           `,
           [username]
         );
@@ -2329,24 +2703,49 @@ app.post(
           ]
         );
 
-      res.json({
-        id: result.insertId,
+      return res.json({
+        id:
+          result.insertId,
+
         name,
+
         username,
-        role: "Administrator",
-        status: "Active",
+
+        role:
+          "Administrator",
+
+        status:
+          "Active",
       });
     } catch (error) {
+      if (
+        error?.code ===
+        "ER_DUP_ENTRY"
+      ) {
+        return res.status(409).json({
+          message:
+            "This username is already in use.",
+        });
+      }
+
       next(error);
     }
   }
 );
 
+// ============================================================
+// ADMINS - UPDATE
+// ============================================================
+
 app.patch(
   "/api/admins/:id",
   auth,
   ownerOnly,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const old =
         await first(
@@ -2355,6 +2754,7 @@ app.patch(
           FROM users
           WHERE id=?
             AND role='Admin'
+          LIMIT 1
           `,
           [req.params.id]
         );
@@ -2367,15 +2767,19 @@ app.patch(
       }
 
       const name =
-        text(req.body?.name) ||
-        old.name;
+        text(
+          req.body?.name
+        ) || old.name;
 
       const username =
-        text(req.body?.username) ||
-        old.username;
+        text(
+          req.body?.username
+        ) || old.username;
 
       const password =
-        text(req.body?.password);
+        text(
+          req.body?.password
+        );
 
       if (password) {
         await db.execute(
@@ -2386,6 +2790,7 @@ app.patch(
             username=?,
             password_hash=?
           WHERE id=?
+            AND role='Admin'
           `,
           [
             name,
@@ -2405,6 +2810,7 @@ app.patch(
             name=?,
             username=?
           WHERE id=?
+            AND role='Admin'
           `,
           [
             name,
@@ -2414,24 +2820,49 @@ app.patch(
         );
       }
 
-      res.json({
-        id: old.id,
+      return res.json({
+        id:
+          old.id,
+
         name,
+
         username,
-        role: "Administrator",
-        status: "Active",
+
+        role:
+          "Administrator",
+
+        status:
+          "Active",
       });
     } catch (error) {
+      if (
+        error?.code ===
+        "ER_DUP_ENTRY"
+      ) {
+        return res.status(409).json({
+          message:
+            "This username is already in use.",
+        });
+      }
+
       next(error);
     }
   }
 );
 
+// ============================================================
+// ADMINS - DELETE
+// ============================================================
+
 app.delete(
   "/api/admins/:id",
   auth,
   ownerOnly,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [result] =
         await db.execute(
@@ -2443,7 +2874,7 @@ app.delete(
           [req.params.id]
         );
 
-      res.json({
+      return res.json({
         deleted:
           result.affectedRows > 0,
       });
@@ -2460,7 +2891,11 @@ app.delete(
 app.get(
   "/api/dashboard",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const totals =
         await first(
@@ -2533,31 +2968,49 @@ app.get(
       const recent =
         recentRows.map(
           (row) => [
-            row.admin || "Owner",
-            row.candidate_name || "",
-            row.mobile || "",
-            row.city || "",
-            row.category || "",
-            row.course || "",
+            row.admin ||
+              "Owner",
+
+            row.candidate_name ||
+              "",
+
+            row.mobile ||
+              "",
+
+            row.city ||
+              "",
+
+            row.category ||
+              "",
+
+            row.course ||
+              "",
+
             dateOnly(
               row.next_followup_date
             ) || "",
-            row.status || "Pending",
+
+            row.status ||
+              "Pending",
           ]
         );
 
       const cleanFollow =
-        follow.map((row) => ({
-          ...row,
+        follow.map(
+          (row) => ({
+            ...row,
 
-          enquiry_date:
-            dateOnly(row.enquiry_date),
+            enquiry_date:
+              dateOnly(
+                row.enquiry_date
+              ),
 
-          next_followup_date:
-            dateOnly(
-              row.next_followup_date
-            ),
-        }));
+            next_followup_date:
+              dateOnly(
+                row.next_followup_date
+              ),
+          })
+        );
 
       const data = {
         totalStudents:
@@ -2571,25 +3024,34 @@ app.get(
           ),
 
         totalFee:
-          amount(totals.totalFee),
+          amount(
+            totals.totalFee
+          ),
 
         recent,
 
-        follow: cleanFollow,
+        follow:
+          cleanFollow,
 
         categories:
           categories.map(
             (row) => [
               row.name,
-              Number(row.students),
+
+              Number(
+                row.students
+              ),
+
               0,
             ]
           ),
       };
 
-      res.json({
+      return res.json({
         ...data,
-        summary: data,
+
+        summary:
+          data,
       });
     } catch (error) {
       console.error(
@@ -2609,7 +3071,11 @@ app.get(
 app.get(
   "/api/reports",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const totals =
         await first(
@@ -2656,7 +3122,7 @@ app.get(
           `
         );
 
-      res.json({
+      return res.json({
         totalStudents:
           Number(
             totals.totalStudents
@@ -2680,7 +3146,9 @@ app.get(
         categories:
           categories.map(
             (row) => ({
-              name: row.name,
+              name:
+                row.name,
+
               students:
                 Number(
                   row.students
@@ -2701,7 +3169,11 @@ app.get(
 app.get(
   "/api/notifications",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -2725,16 +3197,20 @@ app.get(
           `
         );
 
-      res.json(
-        rows.map((row) => ({
-          ...row,
+      return res.json(
+        rows.map(
+          (row) => ({
+            ...row,
 
-          dueDate:
-            dateOnly(row.dueDate),
+            dueDate:
+              dateOnly(
+                row.dueDate
+              ),
 
-          student_name:
-            row.name,
-        }))
+            student_name:
+              row.name,
+          })
+        )
       );
     } catch (error) {
       next(error);
@@ -2743,13 +3219,17 @@ app.get(
 );
 
 // ============================================================
-// SETTINGS
+// SETTINGS - GET
 // ============================================================
 
 app.get(
   "/api/settings",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       const [rows] =
         await db.query(
@@ -2761,33 +3241,64 @@ app.get(
           `
         );
 
-      const result = {};
+      const result =
+        {};
 
-      rows.forEach((row) => {
-        result[row.setting_key] =
-          typeof row.setting_value ===
-          "string"
-            ? JSON.parse(
-                row.setting_value
-              )
-            : row.setting_value;
-      });
+      rows.forEach(
+        (row) => {
+          try {
+            if (
+              typeof row.setting_value ===
+              "string"
+            ) {
+              result[
+                row.setting_key
+              ] =
+                JSON.parse(
+                  row.setting_value
+                );
+            } else {
+              result[
+                row.setting_key
+              ] =
+                row.setting_value;
+            }
+          } catch {
+            result[
+              row.setting_key
+            ] =
+              row.setting_value;
+          }
+        }
+      );
 
-      res.json(result);
+      return res.json(
+        result
+      );
     } catch (error) {
       next(error);
     }
   }
 );
 
+// ============================================================
+// SETTINGS - UPDATE
+// ============================================================
+
 app.patch(
   "/api/settings",
   auth,
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
       for (
-        const [key, value]
-        of Object.entries(
+        const [
+          key,
+          value,
+        ] of Object.entries(
           req.body || {}
         )
       ) {
@@ -2801,18 +3312,18 @@ app.patch(
           VALUES (?, ?)
 
           ON DUPLICATE KEY UPDATE
-            setting_value=VALUES(
-              setting_value
-            )
+            setting_value=VALUES(setting_value)
           `,
           [
             key,
-            JSON.stringify(value),
+            JSON.stringify(
+              value
+            ),
           ]
         );
       }
 
-      res.json(
+      return res.json(
         req.body || {}
       );
     } catch (error) {
@@ -2826,10 +3337,21 @@ app.patch(
 // ============================================================
 
 async function initializeSchema() {
+  console.log(
+    "Checking database connection..."
+  );
 
-  // ----------------------------------------------------------
+  await db.query(
+    "SELECT 1"
+  );
+
+  console.log(
+    "Database connection successful."
+  );
+
+  // ==========================================================
   // USERS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS users (
@@ -2860,9 +3382,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // STUDENTS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS students (
@@ -2926,14 +3448,17 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
-  // MIGRATION FOR OLD STUDENTS TABLE
-  // ----------------------------------------------------------
+  // ==========================================================
+  // STUDENTS MIGRATION
+  // ==========================================================
 
-  const [studentColumns] =
+  const [
+    studentColumns,
+  ] =
     await db.query(
       `
-      SELECT COLUMN_NAME
+      SELECT
+        COLUMN_NAME
       FROM INFORMATION_SCHEMA.COLUMNS
       WHERE TABLE_SCHEMA=?
         AND TABLE_NAME='students'
@@ -2946,7 +3471,7 @@ async function initializeSchema() {
     studentColumns.length === 0
   ) {
     console.log(
-      "Adding next_followup_date..."
+      "Adding next_followup_date to students..."
     );
 
     await db.query(`
@@ -2961,9 +3486,9 @@ async function initializeSchema() {
     );
   }
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // ENQUIRIES
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS enquiries (
@@ -3027,9 +3552,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // CATEGORIES
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -3050,9 +3575,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // REFERRALS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS referrals (
@@ -3073,9 +3598,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // SETTINGS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS settings (
@@ -3097,9 +3622,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // NOTIFICATIONS
-  // ----------------------------------------------------------
+  // ==========================================================
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS notifications (
@@ -3132,9 +3657,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `);
 
-  // ----------------------------------------------------------
+  // ==========================================================
   // DEFAULT OWNER
-  // ----------------------------------------------------------
+  // ==========================================================
 
   if (
     process.env.OWNER_USERNAME &&
@@ -3143,7 +3668,8 @@ async function initializeSchema() {
     const owner =
       await first(
         `
-        SELECT id
+        SELECT
+          id
         FROM users
         WHERE role='Owner'
         LIMIT 1
@@ -3151,6 +3677,12 @@ async function initializeSchema() {
       );
 
     if (!owner) {
+      const passwordHash =
+        await bcrypt.hash(
+          process.env.OWNER_PASSWORD,
+          12
+        );
+
       await db.execute(
         `
         INSERT INTO users
@@ -3165,10 +3697,7 @@ async function initializeSchema() {
         [
           process.env.OWNER_USERNAME,
 
-          await bcrypt.hash(
-            process.env.OWNER_PASSWORD,
-            12
-          ),
+          passwordHash,
 
           process.env.OWNER_NAME ||
             "SCOT IT Academy Owner",
@@ -3180,6 +3709,10 @@ async function initializeSchema() {
       );
     }
   }
+
+  console.log(
+    "Database schema ready."
+  );
 }
 
 // ============================================================
@@ -3189,8 +3722,11 @@ async function initializeSchema() {
 app.use(
   (req, res) => {
     res.status(404).json({
-      message: "Not found",
-      path: req.originalUrl,
+      message:
+        "Not found",
+
+      path:
+        req.originalUrl,
     });
   }
 );
@@ -3200,13 +3736,46 @@ app.use(
 // ============================================================
 
 app.use(
-  (error, req, res, next) => {
+  (
+    error,
+    req,
+    res,
+    next
+  ) => {
     console.error(
-      "SERVER ERROR:",
+      "SERVER ERROR:"
+    );
+
+    console.error(
       error
     );
 
-    res.status(500).json({
+    if (
+      error?.code ===
+      "ER_DUP_ENTRY"
+    ) {
+      return res.status(409).json({
+        message:
+          "Duplicate value already exists.",
+      });
+    }
+
+    if (
+      error?.code ===
+      "ER_NO_SUCH_TABLE"
+    ) {
+      return res.status(500).json({
+        message:
+          "Required database table does not exist.",
+        error:
+          process.env.NODE_ENV ===
+          "development"
+            ? error.message
+            : undefined,
+      });
+    }
+
+    return res.status(500).json({
       message:
         "Internal server error",
 
@@ -3223,13 +3792,14 @@ app.use(
 // START SERVER
 // ============================================================
 
-initializeSchema()
-  .then(() => {
+async function startServer() {
+  try {
+    await initializeSchema();
 
     app.listen(
       PORT,
+      "0.0.0.0",
       () => {
-
         console.log(
           "======================================"
         );
@@ -3239,31 +3809,92 @@ initializeSchema()
         );
 
         console.log(
-          `Server: http://localhost:${PORT}`
+          `Server running on port ${PORT}`
         );
 
         console.log(
-          `Health: http://localhost:${PORT}/health`
+          `Health: /health`
         );
 
         console.log(
-          `Enquiries: http://localhost:${PORT}/api/enquiries`
+          `Students: /api/students`
+        );
+
+        console.log(
+          `Enquiries: /api/enquiries`
+        );
+
+        console.log(
+          `Dashboard: /api/dashboard`
         );
 
         console.log(
           "======================================"
         );
-
       }
     );
-
-  })
-  .catch((error) => {
+  } catch (error) {
+    console.error(
+      "======================================"
+    );
 
     console.error(
-      `Unable to connect to MySQL database '${DB_CONFIG.database}':`,
-      error.message
+      "DATABASE CONNECTION FAILED"
+    );
+
+    console.error(
+      error
+    );
+
+    console.error(
+      "======================================"
     );
 
     process.exit(1);
-  });
+  }
+}
+
+// ============================================================
+// GRACEFUL SHUTDOWN
+// ============================================================
+
+async function shutdown(
+  signal
+) {
+  console.log(
+    `${signal} received. Closing server...`
+  );
+
+  try {
+    await db.end();
+
+    console.log(
+      "Database pool closed."
+    );
+
+    process.exit(0);
+  } catch (error) {
+    console.error(
+      "Error while closing database:",
+      error
+    );
+
+    process.exit(1);
+  }
+}
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
+
+// ============================================================
+// START
+// ============================================================
+
+startServer();
