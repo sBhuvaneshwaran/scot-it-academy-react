@@ -3636,63 +3636,126 @@ async function initializeSchema() {
     )
     ENGINE=InnoDB
     DEFAULT CHARSET=utf8mb4
+  `)};
+
+// ----------------------------------------------------------
+// DEFAULT OWNER
+// ----------------------------------------------------------
+
+async function initializeOwner() {
+  const ownerUsername = text(process.env.OWNER_USERNAME);
+  const ownerPassword = process.env.OWNER_PASSWORD || "";
+  const ownerName =
+    text(process.env.OWNER_NAME) ||
+    "SCOT IT Academy Owner";
+
+  // --------------------------------------------------------
+  // ENV VALIDATION
+  // --------------------------------------------------------
+
+  if (!ownerUsername || !ownerPassword) {
+    console.log(
+      "OWNER_USERNAME / OWNER_PASSWORD not configured."
+    );
+
+    return;
+  }
+
+  // --------------------------------------------------------
+  // FIND EXISTING OWNER
+  // --------------------------------------------------------
+
+  const owner = await first(`
+    SELECT
+      id,
+      username,
+      name,
+      role
+    FROM users
+    WHERE role='Owner'
+    ORDER BY id ASC
+    LIMIT 1
   `);
 
-  // ==========================================================
-  // DEFAULT OWNER
-  // ==========================================================
+  // --------------------------------------------------------
+  // CREATE OWNER IF NOT EXISTS
+  // --------------------------------------------------------
+
+  if (!owner) {
+    const passwordHash = await bcrypt.hash(
+      ownerPassword,
+      12
+    );
+
+    await db.execute(
+      `
+      INSERT INTO users
+      (
+        username,
+        password_hash,
+        name,
+        role
+      )
+      VALUES (?, ?, ?, 'Owner')
+      `,
+      [
+        ownerUsername,
+        passwordHash,
+        ownerName,
+      ]
+    );
+
+    console.log(
+      `Owner account created: ${ownerUsername}`
+    );
+
+    return;
+  }
+
+  // --------------------------------------------------------
+  // OPTIONAL OWNER SYNC
+  // --------------------------------------------------------
+  // Set OWNER_SYNC=true in Render temporarily if
+  // you want the Render environment credentials to
+  // replace the existing Owner credentials.
+  // --------------------------------------------------------
 
   if (
-    process.env.OWNER_USERNAME &&
-    process.env.OWNER_PASSWORD
+    String(process.env.OWNER_SYNC).toLowerCase() ===
+    "true"
   ) {
-    const owner =
-      await first(
-        `
-        SELECT
-          id
-        FROM users
-        WHERE role='Owner'
-        LIMIT 1
-        `
-      );
+    const passwordHash = await bcrypt.hash(
+      ownerPassword,
+      12
+    );
 
-    if (!owner) {
-      const passwordHash =
-        await bcrypt.hash(
-          process.env.OWNER_PASSWORD,
-          12
-        );
+    await db.execute(
+      `
+      UPDATE users
+      SET
+        username=?,
+        password_hash=?,
+        name=?
+      WHERE id=?
+        AND role='Owner'
+      `,
+      [
+        ownerUsername,
+        passwordHash,
+        ownerName,
+        owner.id,
+      ]
+    );
 
-      await db.execute(
-        `
-        INSERT INTO users
-        (
-          username,
-          password_hash,
-          name,
-          role
-        )
-        VALUES (?, ?, ?, 'Owner')
-        `,
-        [
-          process.env.OWNER_USERNAME,
+    console.log(
+      `Owner account synchronized: ${ownerUsername}`
+    );
 
-          passwordHash,
-
-          process.env.OWNER_NAME ||
-            "SCOT IT Academy Owner",
-        ]
-      );
-
-      console.log(
-        "Owner account created."
-      );
-    }
+    return;
   }
 
   console.log(
-    "Database schema ready."
+    `Existing Owner found: ${owner.username}`
   );
 }
 
