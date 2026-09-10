@@ -29,45 +29,26 @@ const JWT_SECRET =
 // ============================================================
 
 const DB_CONFIG = {
-  host: process.env.DB_HOST || "localhost",
-
-  port: Number(
-    process.env.DB_PORT || 3306
-  ),
-
-  user:
-    process.env.DB_USER || "root",
-
-  password:
-    process.env.DB_PASSWORD || "",
-
-  database:
-    process.env.DB_NAME || "student_management",
+  host: process.env.DB_HOST || "scot-it-academy-backend-sbhuvaneshwaran400-ef91.h.aivencloud.com",
+  port: Number(process.env.DB_PORT || 15727),
+  user: process.env.DB_USER || "avnadmin",
+  password: process.env.DB_PASSWORD || "root",
+  database: process.env.DB_NAME || "student_management",
 
   waitForConnections: true,
+  connectionLimit: 10,
 
-  connectionLimit: Number(
-    process.env.DB_CONNECTION_LIMIT || 10
-  ),
-
-  queueLimit: 0,
-
-  // Keep MySQL DATE values as YYYY-MM-DD strings
   dateStrings: true,
 
   charset: "utf8mb4",
 
-  // ==========================================================
-  // AIVEN / CLOUD MYSQL SSL
-  // ==========================================================
-
-  ssl:
-    process.env.DB_SSL === "true" ||
-    process.env.DB_HOST
-      ? {
+  ...(String(process.env.DB_SSL).toLowerCase() === "true"
+    ? {
+        ssl: {
           rejectUnauthorized: false,
-        }
-      : undefined,
+        },
+      }
+    : {}),
 };
 
 // ============================================================
