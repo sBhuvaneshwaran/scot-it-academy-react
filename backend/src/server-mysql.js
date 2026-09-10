@@ -457,20 +457,21 @@ app.post(
         });
       }
 
-      const user = await first(
-        `
-        SELECT
-          id,
-          username,
-          password_hash,
-          name,
-          role
-        FROM users
-        WHERE LOWER(username)=LOWER(?)
-        LIMIT 1
-        `,
-        [username]
-      );
+      const user =
+        await first(
+          `
+          SELECT
+            id,
+            username,
+            password_hash,
+            name,
+            role
+          FROM users
+          WHERE LOWER(username)=LOWER(?)
+          LIMIT 1
+          `,
+          [username]
+        );
 
       if (!user) {
         console.log(
@@ -4072,13 +4073,9 @@ app.use(
 
 async function startServer() {
   try {
-    console.log(
-      "Checking database connection..."
-    );
+    console.log("Checking database connection...");
 
-    await db.query(
-      "SELECT 1"
-    );
+    await db.query("SELECT 1");
 
     console.log(
       "Database connection successful."
@@ -4087,47 +4084,39 @@ async function startServer() {
     await ensureDefaultOwner();
 
     const PORT =
-      Number(
-        process.env.PORT
-      ) || 10000;
+      process.env.PORT || 10000;
 
-    const server =
-      app.listen(
-        PORT,
-        "0.0.0.0",
-        () => {
-          console.log("");
-          console.log(
-            "======================================"
-          );
-          console.log(
-            "SCOT IT Academy API"
-          );
-          console.log(
-            `Server running on port ${PORT}`
-          );
-          console.log(
-            "Health: /health"
-          );
-          console.log(
-            "Students: /api/students"
-          );
-          console.log(
-            "Enquiries: /api/enquiries"
-          );
-          console.log(
-            "Dashboard: /api/dashboard"
-          );
-          console.log(
-            "Auth Login: /api/auth/login"
-          );
-          console.log(
-            "======================================"
-          );
-        }
-      );
-
-    global.server = server;
+    app.listen(
+      PORT,
+      "0.0.0.0",
+      () => {
+        console.log("");
+        console.log(
+          "======================================"
+        );
+        console.log(
+          "SCOT IT Academy API"
+        );
+        console.log(
+          `Server running on port ${PORT}`
+        );
+        console.log(
+          "Health: /health"
+        );
+        console.log(
+          "Students: /api/students"
+        );
+        console.log(
+          "Enquiries: /api/enquiries"
+        );
+        console.log(
+          "Dashboard: /api/dashboard"
+        );
+        console.log(
+          "======================================"
+        );
+      }
+    );
 
   } catch (error) {
     console.error(
@@ -4140,37 +4129,19 @@ async function startServer() {
   }
 }
 
-// ============================================================
-// START ONLY ONCE
-// ============================================================
-
-startServer();
-
 
 // ============================================================
 // GRACEFUL SHUTDOWN
 // ============================================================
 
-async function shutdown(signal) {
+async function shutdown(
+  signal
+) {
   console.log(
     `${signal} received. Closing server...`
   );
 
   try {
-    if (global.server) {
-      await new Promise(
-        (resolve) => {
-          global.server.close(
-            resolve
-          );
-        }
-      );
-
-      console.log(
-        "HTTP server closed."
-      );
-    }
-
     await db.end();
 
     console.log(
@@ -4178,36 +4149,15 @@ async function shutdown(signal) {
     );
 
     process.exit(0);
-
   } catch (error) {
     console.error(
-      "❌ Error while closing server:",
+      "Error while closing database:",
       error
     );
 
     process.exit(1);
   }
 }
-
-process.on(
-  "SIGTERM",
-  () => shutdown("SIGTERM")
-);
-
-process.on(
-  "SIGINT",
-  () => shutdown("SIGINT")
-);
-
-process.on(
-  "SIGTERM",
-  () => shutdown("SIGTERM")
-);
-
-process.on(
-  "SIGINT",
-  () => shutdown("SIGINT")
-);
 
 process.on(
   "SIGTERM",
