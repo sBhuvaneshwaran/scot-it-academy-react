@@ -428,51 +428,677 @@ api.interceptors.response.use(
  * ======================================================
  */
 
-login: async (data) => {
-  const username = String(data?.username || "").trim();
-  const password = String(data?.password || "");
+export const authApi = {
 
-  if (!username || !password) {
-    return Promise.reject(
-      new Error("Username and password are required.")
-    );
-  }
+  /*
+   * ====================================================
+   * LOGIN
+   * ====================================================
+   */
 
-  if (!useDummyData) {
-    const response = await api.post("/auth/login", {
-      username,
-      password,
-    });
+  login: async (data = {}) => {
 
-    const user = response.data?.user || null;
+    const username =
+      String(
+        data?.username || ""
+      ).trim();
 
-    const token = getResponseToken(response.data);
+    // Do NOT trim passwords.
+    const password =
+      String(
+        data?.password || ""
+      );
 
-    if (!user) {
+    if (!username || !password) {
       throw new Error(
-        "User information was not returned by the server."
+        "Username and password are required."
       );
     }
+
+    /*
+     * --------------------------------------------------
+     * BACKEND MODE
+     * --------------------------------------------------
+     */
+
+    if (!useDummyData) {
+
+      const response =
+        await api.post(
+          "/auth/login",
+          {
+            username,
+            password,
+          }
+        );
+
+      const user =
+        response.data?.user ||
+        null;
+
+      const token =
+        getResponseToken(
+          response.data
+        );
+
+      if (!user) {
+        throw new Error(
+          "User information was not returned by the server."
+        );
+      }
+
+      if (!token) {
+        throw new Error(
+          "Login token was not returned by the server."
+        );
+      }
+
+      /*
+       * Save REAL JWT
+       */
+
+      setAuthSession(
+        token,
+        user
+      );
+
+      /*
+       * Reset workspace for Admin
+       */
+
+      if (
+        String(
+          user.role || ""
+        ).toLowerCase() ===
+        "admin"
+      ) {
+        resetWorkspaceForNewAdmin(
+          user.username
+        );
+      }
+
+      return response;
+    }
+
+    /*
+     * --------------------------------------------------
+     * DUMMY MODE
+     * --------------------------------------------------
+     */
+
+    ensureOwnerAccount();
+
+    const users =
+      getStoredUsers();
+
+    const matchedUser =
+      users.find(
+        (user) =>
+          String(
+            user.username || ""
+          ).toLowerCase() ===
+            username.toLowerCase() &&
+          String(
+            user.password || ""
+          ) ===
+            password
+      );
+
+    if (matchedUser) {
+
+      const payloadUser = {
+        id:
+          matchedUser.id ||
+          matchedUser.username,
+
+        username:
+          matchedUser.username,
+
+        name:
+          matchedUser.name ||
+          matchedUser.username,
+
+        role:
+          matchedUser.role ||
+          "Admin",
+      };
+
+      setAuthSession(
+        "demo-token",
+        payloadUser
+      );
+
+      if (
+        String(
+          matchedUser.role || ""
+        ).toLowerCase() ===
+        "admin"
+      ) {
+        resetWorkspaceForNewAdmin(
+          matchedUser.username
+        );
+      }
+
+      return {
+        data: {
+          access:
+            "demo-token",
+
+          user:
+            payloadUser,
+        },
+      };
+    }
+
+    /*
+     * Default Owner login
+     */
+
+    if (
+      username.toLowerCase() ===
+        "scot" &&
+      password ===
+        "scotitacademy@2026"
+    ) {
+
+      const ownerUser = {
+        id:
+          "owner",
+
+        username:
+          "SCOT",
+
+        name:
+          "SCOT IT Academy Owner",
+
+        role:
+          "Owner",
+      };
+
+      setAuthSession(
+        "demo-token",
+        ownerUser
+      );
+
+      return {
+        data: {
+          access:
+            "demo-token",
+
+          user:
+            ownerUser,
+        },
+      };
+    }
+
+    throw new Error(
+      "Invalid username or password."
+    );
+  },
+
+
+  /*
+   * ====================================================
+   * SIGNUP
+   * ====================================================
+   */
+
+  signup: async (data = {}) => {
+
+    /*
+     * --------------------------------------------------
+     * BACKEND MODE
+     * --------------------------------------------------
+     */
+
+    if (!useDummyData) {
+
+      const response =
+        await api.post(
+          "/auth/signup",
+          data
+        );
+
+      const user =
+        response.data?.user ||
+        null;
+
+      const token =
+        getResponseToken(
+          response.data
+        );
+
+      console.log(
+        "Signup response:",
+        response.data
+      );
+
+      console.log(
+        "Signup JWT token:",
+        token
+          ? "TOKEN RECEIVED"
+          : "NO TOKEN RECEIVED"
+      );
+
+      if (!user) {
+        throw new Error(
+          "Signup succeeded but user information was not returned."
+        );
+      }
+
+      /*
+       * Save authentication only
+       * when JWT is returned.
+       */
+
+      if (token) {
+
+        setAuthSession(
+          token,
+          user
+        );
+
+      } else {
+
+        setCurrentUser(
+          user
+        );
+
+        console.error(
+          "Backend signup did not return a JWT token."
+        );
+      }
+
+      return response;
+    }
+
+
+    /*
+     * --------------------------------------------------
+     * DUMMY MODE
+     * --------------------------------------------------
+     */
+
+    const username =
+      String(
+        data?.username || ""
+      ).trim();
+
+    const password =
+      String(
+        data?.password || ""
+      );
+
+    const name =
+      String(
+        data?.name ||
+          "SCOT IT Academy Owner"
+      ).trim();
+
+    const adminRows =
+      Array.isArray(
+        data?.admins
+      )
+        ? data.admins
+        : [];
+
+    if (!username || !password) {
+      throw new Error(
+        "Username and password are required."
+      );
+    }
+
+    const users =
+      ensureOwnerAccount();
+
+    const ownerEntry =
+      users.find(
+        (user) =>
+          String(
+            user.role || ""
+          ).toLowerCase() ===
+            "owner" ||
+          user.id ===
+            "owner"
+      );
+
+    /*
+     * Update existing Owner
+     */
+
+    if (ownerEntry) {
+
+      ownerEntry.username =
+        username;
+
+      ownerEntry.password =
+        password;
+
+      ownerEntry.name =
+        name ||
+        ownerEntry.name;
+
+    } else {
+
+      /*
+       * Create Owner
+       */
+
+      users.push({
+        id:
+          "owner",
+
+        username,
+
+        password,
+
+        name,
+
+        role:
+          "Owner",
+      });
+    }
+
+    const createdAdmins = [];
+
+    /*
+     * Create Admin accounts
+     */
+
+    adminRows.forEach(
+      (admin) => {
+
+        const adminName =
+          String(
+            admin?.name || ""
+          ).trim();
+
+        const adminUsername =
+          String(
+            admin?.username || ""
+          ).trim();
+
+        const adminPassword =
+          String(
+            admin?.password || ""
+          );
+
+        if (
+          !adminUsername ||
+          !adminPassword
+        ) {
+          return;
+        }
+
+        const duplicate =
+          users.find(
+            (user) =>
+              String(
+                user.username || ""
+              ).toLowerCase() ===
+              adminUsername.toLowerCase()
+          );
+
+        if (duplicate) {
+          throw new Error(
+            `Admin username "${adminUsername}" is already in use.`
+          );
+        }
+
+        const newAdmin = {
+
+          id:
+            `admin-${Date.now()}-${Math.random()
+              .toString(16)
+              .slice(2, 8)}`,
+
+          username:
+            adminUsername,
+
+          password:
+            adminPassword,
+
+          name:
+            adminName ||
+            adminUsername,
+
+          role:
+            "Admin",
+        };
+
+        users.push(
+          newAdmin
+        );
+
+        createdAdmins.push(
+          newAdmin
+        );
+      }
+    );
+
+    saveStoredUsers(
+      users
+    );
+
+    const ownerUser = {
+
+      id:
+        ownerEntry
+          ? ownerEntry.id
+          : "owner",
+
+      username,
+
+      name,
+
+      role:
+        "Owner",
+    };
+
+    setAuthSession(
+      "demo-token",
+      ownerUser
+    );
+
+    return {
+      data: {
+
+        access:
+          "demo-token",
+
+        user:
+          ownerUser,
+
+        admins:
+          createdAdmins,
+      },
+    };
+  },
+
+
+  /*
+   * ====================================================
+   * UPDATE OWNER USERNAME
+   * ====================================================
+   */
+
+  updateOwner: async (
+    data = {}
+  ) => {
+
+    const username =
+      String(
+        data?.username || ""
+      ).trim();
+
+    const currentPassword =
+      String(
+        data?.current_password || ""
+      );
+
+    if (!username) {
+      throw new Error(
+        "Please enter owner username."
+      );
+    }
+
+    if (!currentPassword) {
+      throw new Error(
+        "Please enter your current password."
+      );
+    }
+
+    const token =
+      getAccessToken();
 
     if (!token) {
       throw new Error(
-        "Login token was not returned by the server."
+        "Authentication token is missing. Please login again."
       );
     }
 
-    setAuthSession(token, user);
+    const response =
+      await api.put(
+        "/auth/update-owner",
+        {
+          username,
 
-    if (
-      String(user.role || "").toLowerCase() === "admin"
-    ) {
-      resetWorkspaceForNewAdmin(user.username);
+          current_password:
+            currentPassword,
+        }
+      );
+
+    const user =
+      response.data?.user ||
+      null;
+
+    const newToken =
+      getResponseToken(
+        response.data
+      );
+
+    if (newToken) {
+
+      setAuthSession(
+        newToken,
+        user ||
+          getCurrentUser()
+      );
+
+    } else if (user) {
+
+      setCurrentUser(
+        user
+      );
     }
 
     return response;
-  }
+  },
 
-  // Dummy mode...
-}
+
+  /*
+   * ====================================================
+   * UPDATE OWNER PASSWORD
+   * ====================================================
+   */
+
+  updatePassword: async (
+    data = {}
+  ) => {
+
+    const currentPassword =
+      String(
+        data?.current_password || ""
+      );
+
+    const newPassword =
+      String(
+        data?.new_password || ""
+      );
+
+    if (!currentPassword) {
+      throw new Error(
+        "Please enter current password."
+      );
+    }
+
+    if (!newPassword) {
+      throw new Error(
+        "Please enter new password."
+      );
+    }
+
+    if (
+      newPassword.length <
+      6
+    ) {
+      throw new Error(
+        "New password must contain at least 6 characters."
+      );
+    }
+
+    const token =
+      getAccessToken();
+
+    if (!token) {
+      throw new Error(
+        "Authentication token is missing. Please login again."
+      );
+    }
+
+    const response =
+      await api.put(
+        "/auth/update-password",
+        {
+          current_password:
+            currentPassword,
+
+          new_password:
+            newPassword,
+        }
+      );
+
+    const user =
+      response.data?.user ||
+      null;
+
+    const newToken =
+      getResponseToken(
+        response.data
+      );
+
+    if (newToken) {
+
+      setAuthSession(
+        newToken,
+
+        user ||
+          getCurrentUser()
+      );
+
+    } else if (user) {
+
+      setCurrentUser(
+        user
+      );
+    }
+
+    return response;
+  },
+
+
+  /*
+   * ====================================================
+   * CURRENT USER
+   * ====================================================
+   */
+
+  me: () =>
+    api.get(
+      "/auth/me"
+    ),
+};
+
 
 /*
  * ======================================================
@@ -485,6 +1111,7 @@ export const dashboardApi = {
   summary: () => {
 
     if (!useDummyData) {
+
       return api.get(
         "/dashboard/"
       );
@@ -497,13 +1124,21 @@ export const dashboardApi = {
           clone(
             dummyData.enquiries
           ).map((row) => [
+
             row.admin,
+
             row.candidate_name,
+
             row.mobile,
+
             row.city,
+
             row.category,
+
             row.course,
+
             row.next_followup_date,
+
             row.status,
           ]),
 
@@ -511,7 +1146,9 @@ export const dashboardApi = {
           clone(
             dummyData.enquiries
           ).map((row) => ({
+
             ...row,
+
             name:
               row.candidate_name,
           })),
@@ -519,6 +1156,7 @@ export const dashboardApi = {
         categories:
           dummyData.categories.map(
             (category) => [
+
               category,
 
               dummyData.enquiries.filter(
@@ -539,19 +1177,23 @@ export const dashboardApi = {
   notifications: () => {
 
     if (!useDummyData) {
+
       return api.get(
         "/notifications/"
       );
     }
 
     return Promise.resolve({
-      data: clone(
-        dummyData.notifications
-      ).map((row) => ({
-        ...row,
-        name:
-          row.student_name,
-      })),
+      data:
+        clone(
+          dummyData.notifications
+        ).map((row) => ({
+
+          ...row,
+
+          name:
+            row.student_name,
+        })),
     });
   },
 };
