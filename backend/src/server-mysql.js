@@ -3638,105 +3638,151 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `)};
 
-// ============================================================
-// DEFAULT OWNER / SYNC OWNER FROM ENV
-// ============================================================
+// ----------------------------------------------------------
+// DEFAULT OWNER
+// ----------------------------------------------------------
 
 async function ensureDefaultOwner() {
-  const username = String(
-    process.env.OWNER_USERNAME || ""
-  ).trim();
-
-  const password =
-    process.env.OWNER_PASSWORD || "";
-
-  const name =
-    String(
-      process.env.OWNER_NAME ||
-      "SCOT IT Academy Owner"
+  try {
+    const username = String(
+      process.env.OWNER_USERNAME || ""
     ).trim();
 
-  if (!username || !password) {
-    console.log(
-      "OWNER_USERNAME or OWNER_PASSWORD is missing."
+    const password = String(
+      process.env.OWNER_PASSWORD || ""
     );
-    return;
-  }
 
-  const existingOwner = await first(`
-    SELECT
-      id,
-      username,
-      name,
-      role
-    FROM users
-    WHERE role='Owner'
-    ORDER BY id ASC
-    LIMIT 1
-  `);
+    const name = String(
+      process.env.OWNER_NAME || "SCOT IT Academy Owner"
+    ).trim();
 
-  const passwordHash = await bcrypt.hash(
-    password,
-    12
-  );
+    // Check environment variables
+    if (!username || !password) {
+      console.error(
+        "❌ OWNER_USERNAME or OWNER_PASSWORD is missing."
+      );
+      return;
+    }
 
-  // ----------------------------------------------------------
-  // CREATE OWNER
-  // ----------------------------------------------------------
+    console.log("🔐 Checking default Owner account...");
 
-  if (!existingOwner) {
-    await db.execute(
-      `
-      INSERT INTO users
-      (
+    // Find existing Owner
+    const owner = await first(`
+      SELECT
+        id,
         username,
-        password_hash,
         name,
-        role
-      )
-      VALUES (?, ?, ?, 'Owner')
-      `,
-      [
-        username,
-        passwordHash,
-        name,
-      ]
+        role,
+        password_hash
+      FROM users
+      WHERE role = 'Owner'
+      ORDER BY id ASC
+      LIMIT 1
+    `);
+
+    // --------------------------------------------------
+    // CREATE OWNER
+    // --------------------------------------------------
+    if (!owner) {
+      const passwordHash = await bcrypt.hash(
+        password,
+        12
+      );
+
+      await db.execute(
+        `
+        INSERT INTO users
+        (
+          username,
+          password_hash,
+          name,
+          role
+        )
+        VALUES (?, ?, ?, 'Owner')
+        `,
+        [
+          username,
+          passwordHash,
+          name
+        ]
+      );
+
+      console.log(
+        `✅ Owner created successfully: ${username}`
+      );
+
+      return;
+    }
+
+    // --------------------------------------------------
+    // CHECK USERNAME / NAME
+    // --------------------------------------------------
+    let updateRequired = false;
+
+    if (owner.username !== username) {
+      updateRequired = true;
+    }
+
+    if (owner.name !== name) {
+      updateRequired = true;
+    }
+
+    // --------------------------------------------------
+    // CHECK PASSWORD
+    // --------------------------------------------------
+    const passwordMatches = await bcrypt.compare(
+      password,
+      owner.password_hash
     );
 
-    console.log(
-      `Owner created: ${username}`
+    if (!passwordMatches) {
+      updateRequired = true;
+    }
+
+    // --------------------------------------------------
+    // UPDATE OWNER ONLY IF REQUIRED
+    // --------------------------------------------------
+    if (updateRequired) {
+      const passwordHash = passwordMatches
+        ? owner.password_hash
+        : await bcrypt.hash(password, 12);
+
+      await db.execute(
+        `
+        UPDATE users
+        SET
+          username = ?,
+          password_hash = ?,
+          name = ?
+        WHERE id = ?
+          AND role = 'Owner'
+        `,
+        [
+          username,
+          passwordHash,
+          name,
+          owner.id
+        ]
+      );
+
+      console.log(
+        `✅ Owner synchronized successfully: ${username}`
+      );
+    } else {
+      console.log(
+        `✅ Owner already exists: ${username}`
+      );
+    }
+
+  } catch (error) {
+    console.error(
+      "❌ Failed to create/synchronize Owner:",
+      error
     );
 
-    return;
+    throw error;
   }
-
-  // ----------------------------------------------------------
-  // UPDATE EXISTING OWNER
-  // ----------------------------------------------------------
-
-  await db.execute(
-    `
-    UPDATE users
-    SET
-      username=?,
-      password_hash=?,
-      name=?
-    WHERE id=?
-      AND role='Owner'
-    `,
-    [
-      username,
-      passwordHash,
-      name,
-      existingOwner.id,
-    ]
-  );
-
-  console.log(
-    `Owner synchronized successfully: ${username}`
-  );
 }
-
 // ============================================================
 // 404
 // ============================================================
