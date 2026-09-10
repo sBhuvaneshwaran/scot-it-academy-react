@@ -457,21 +457,20 @@ app.post(
         });
       }
 
-      const user =
-        await first(
-          `
-          SELECT
-            id,
-            username,
-            password_hash,
-            name,
-            role
-          FROM users
-          WHERE LOWER(username)=LOWER(?)
-          LIMIT 1
-          `,
-          [username]
-        );
+      const user = await first(
+        `
+        SELECT
+          id,
+          username,
+          password_hash,
+          name,
+          role
+        FROM users
+        WHERE LOWER(username)=LOWER(?)
+        LIMIT 1
+        `,
+        [username]
+      );
 
       if (!user) {
         console.log(
@@ -3670,9 +3669,9 @@ async function initializeSchema() {
     DEFAULT CHARSET=utf8mb4
   `)};
 
-// ----------------------------------------------------------
+// ============================================================
 // DEFAULT OWNER
-// ----------------------------------------------------------
+// ============================================================
 
 async function ensureDefaultOwner() {
   try {
@@ -3689,6 +3688,10 @@ async function ensureDefaultOwner() {
         "SCOT IT Academy Owner"
     ).trim();
 
+    // --------------------------------------------------------
+    // LOG CONFIGURATION
+    // --------------------------------------------------------
+
     console.log("🔐 Owner configuration:", {
       username,
       passwordConfigured: Boolean(password),
@@ -3696,9 +3699,9 @@ async function ensureDefaultOwner() {
       name,
     });
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // CHECK ENVIRONMENT VARIABLES
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     if (!username || !password) {
       console.error(
@@ -3706,19 +3709,19 @@ async function ensureDefaultOwner() {
       );
 
       console.error(
-        "👉 Add OWNER_USERNAME and OWNER_PASSWORD in Render Environment Variables."
+        "👉 Add OWNER_USERNAME and OWNER_PASSWORD to the Render Web Service Environment Variables."
       );
 
-      return;
+      return false;
     }
 
     console.log(
       "🔐 Checking default Owner account..."
     );
 
-    // ------------------------------------------------------
-    // CHECK IF USERNAME IS ALREADY USED
-    // ------------------------------------------------------
+    // --------------------------------------------------------
+    // CHECK WHETHER USERNAME IS ALREADY USED
+    // --------------------------------------------------------
 
     const usernameUser = await first(
       `
@@ -3733,9 +3736,9 @@ async function ensureDefaultOwner() {
       [username]
     );
 
-    // ------------------------------------------------------
-    // IF USERNAME EXISTS BUT BELONGS TO ADMIN
-    // ------------------------------------------------------
+    // --------------------------------------------------------
+    // USERNAME BELONGS TO ADMIN
+    // --------------------------------------------------------
 
     if (
       usernameUser &&
@@ -3747,15 +3750,15 @@ async function ensureDefaultOwner() {
       );
 
       console.error(
-        "👉 Choose a different OWNER_USERNAME in Render."
+        "👉 Change OWNER_USERNAME in Render."
       );
 
-      return;
+      return false;
     }
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // FIND EXISTING OWNER
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     const owner = await first(
       `
@@ -3772,9 +3775,9 @@ async function ensureDefaultOwner() {
       `
     );
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // CREATE OWNER IF NOT EXISTS
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     if (!owner) {
       console.log(
@@ -3811,19 +3814,31 @@ async function ensureDefaultOwner() {
         );
 
       console.log(
-        `✅ Owner created successfully. ID: ${result.insertId}`
+        "======================================"
+      );
+
+      console.log(
+        `✅ Owner created successfully.`
+      );
+
+      console.log(
+        `👤 Owner ID: ${result.insertId}`
       );
 
       console.log(
         `👤 Owner username: ${username}`
       );
 
-      return;
+      console.log(
+        "======================================"
+      );
+
+      return true;
     }
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // EXISTING OWNER
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     console.log(
       "👤 Existing Owner:",
@@ -3835,48 +3850,65 @@ async function ensureDefaultOwner() {
         hasPasswordHash:
           Boolean(owner.password_hash),
         passwordHashLength:
-          owner.password_hash?.length || 0,
+          owner.password_hash
+            ? owner.password_hash.length
+            : 0,
       }
     );
 
     let updateRequired = false;
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // CHECK USERNAME
-    // ------------------------------------------------------
+    // --------------------------------------------------------
+
+    const currentUsername =
+      String(
+        owner.username || ""
+      ).trim();
 
     if (
-      String(owner.username || "")
-        .trim() !== username
+      currentUsername.toLowerCase() !==
+      username.toLowerCase()
     ) {
       updateRequired = true;
     }
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // CHECK NAME
-    // ------------------------------------------------------
+    // --------------------------------------------------------
+
+    const currentName =
+      String(
+        owner.name || ""
+      ).trim();
 
     if (
-      String(owner.name || "")
-        .trim() !== name
+      currentName !== name
     ) {
       updateRequired = true;
     }
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // CHECK PASSWORD
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     let passwordMatches = false;
 
-    if (
-      owner.password_hash
-    ) {
-      passwordMatches =
-        await bcrypt.compare(
-          password,
-          owner.password_hash
+    if (owner.password_hash) {
+      try {
+        passwordMatches =
+          await bcrypt.compare(
+            password,
+            owner.password_hash
+          );
+      } catch (error) {
+        console.error(
+          "⚠️ Could not compare Owner password hash."
         );
+
+        passwordMatches = false;
+      }
     }
 
     console.log(
@@ -3888,9 +3920,9 @@ async function ensureDefaultOwner() {
       updateRequired = true;
     }
 
-    // ------------------------------------------------------
+    // --------------------------------------------------------
     // UPDATE OWNER
-    // ------------------------------------------------------
+    // --------------------------------------------------------
 
     if (updateRequired) {
       console.log(
@@ -3924,13 +3956,31 @@ async function ensureDefaultOwner() {
       );
 
       console.log(
-        `✅ Owner synchronized successfully: ${username}`
+        "======================================"
+      );
+
+      console.log(
+        "✅ Owner synchronized successfully."
+      );
+
+      console.log(
+        `👤 Username: ${username}`
+      );
+
+      console.log(
+        `👤 Name: ${name}`
+      );
+
+      console.log(
+        "======================================"
       );
     } else {
       console.log(
         `✅ Owner already exists and is synchronized: ${username}`
       );
     }
+
+    return true;
 
   } catch (error) {
     console.error(
@@ -3942,6 +3992,7 @@ async function ensureDefaultOwner() {
     throw error;
   }
 }
+
 // ============================================================
 // 404
 // ============================================================
@@ -4021,9 +4072,13 @@ app.use(
 
 async function startServer() {
   try {
-    console.log("Checking database connection...");
+    console.log(
+      "Checking database connection..."
+    );
 
-    await db.query("SELECT 1");
+    await db.query(
+      "SELECT 1"
+    );
 
     console.log(
       "Database connection successful."
@@ -4032,39 +4087,47 @@ async function startServer() {
     await ensureDefaultOwner();
 
     const PORT =
-      process.env.PORT || 10000;
+      Number(
+        process.env.PORT
+      ) || 10000;
 
-    app.listen(
-      PORT,
-      "0.0.0.0",
-      () => {
-        console.log("");
-        console.log(
-          "======================================"
-        );
-        console.log(
-          "SCOT IT Academy API"
-        );
-        console.log(
-          `Server running on port ${PORT}`
-        );
-        console.log(
-          "Health: /health"
-        );
-        console.log(
-          "Students: /api/students"
-        );
-        console.log(
-          "Enquiries: /api/enquiries"
-        );
-        console.log(
-          "Dashboard: /api/dashboard"
-        );
-        console.log(
-          "======================================"
-        );
-      }
-    );
+    const server =
+      app.listen(
+        PORT,
+        "0.0.0.0",
+        () => {
+          console.log("");
+          console.log(
+            "======================================"
+          );
+          console.log(
+            "SCOT IT Academy API"
+          );
+          console.log(
+            `Server running on port ${PORT}`
+          );
+          console.log(
+            "Health: /health"
+          );
+          console.log(
+            "Students: /api/students"
+          );
+          console.log(
+            "Enquiries: /api/enquiries"
+          );
+          console.log(
+            "Dashboard: /api/dashboard"
+          );
+          console.log(
+            "Auth Login: /api/auth/login"
+          );
+          console.log(
+            "======================================"
+          );
+        }
+      );
+
+    global.server = server;
 
   } catch (error) {
     console.error(
@@ -4077,6 +4140,10 @@ async function startServer() {
   }
 }
 
+// ============================================================
+// START ONLY ONCE
+// ============================================================
+
 startServer();
 
 
@@ -4084,14 +4151,26 @@ startServer();
 // GRACEFUL SHUTDOWN
 // ============================================================
 
-async function shutdown(
-  signal
-) {
+async function shutdown(signal) {
   console.log(
     `${signal} received. Closing server...`
   );
 
   try {
+    if (global.server) {
+      await new Promise(
+        (resolve) => {
+          global.server.close(
+            resolve
+          );
+        }
+      );
+
+      console.log(
+        "HTTP server closed."
+      );
+    }
+
     await db.end();
 
     console.log(
@@ -4099,15 +4178,36 @@ async function shutdown(
     );
 
     process.exit(0);
+
   } catch (error) {
     console.error(
-      "Error while closing database:",
+      "❌ Error while closing server:",
       error
     );
 
     process.exit(1);
   }
 }
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
+
+process.on(
+  "SIGTERM",
+  () => shutdown("SIGTERM")
+);
+
+process.on(
+  "SIGINT",
+  () => shutdown("SIGINT")
+);
 
 process.on(
   "SIGTERM",
