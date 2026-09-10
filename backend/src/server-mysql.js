@@ -428,70 +428,54 @@ app.get(
 
 app.post(
   "/api/auth/login",
-  async (req, res, next) => {
+  async (
+    req,
+    res,
+    next
+  ) => {
     try {
-      const username = text(
-        req.body?.username
-      );
+      const username =
+        text(
+          req.body?.username
+        );
 
       const password =
         req.body?.password || "";
 
-      console.log("======================================");
-      console.log("🔐 LOGIN REQUEST");
-      console.log("Username:", username);
       console.log(
-        "Password received:",
-        Boolean(password)
-      );
-      console.log(
-        "Password length:",
-        String(password).length
+        "🔐 Login attempt:",
+        username
       );
 
-      // --------------------------------------------------
-      // VALIDATION
-      // --------------------------------------------------
-
-      if (!username || !password) {
-        console.log(
-          "❌ Username or password missing."
-        );
-
+      if (
+        !username ||
+        !password
+      ) {
         return res.status(400).json({
           message:
             "Username and password are required.",
         });
       }
 
-      // --------------------------------------------------
-      // FIND USER
-      // --------------------------------------------------
-
-      const user = await first(
-        `
-        SELECT
-          id,
-          username,
-          password_hash,
-          name,
-          role
-        FROM users
-        WHERE LOWER(TRIM(username)) =
-              LOWER(TRIM(?))
-        LIMIT 1
-        `,
-        [username]
-      );
-
-      console.log(
-        "👤 Database user found:",
-        Boolean(user)
-      );
+      const user =
+        await first(
+          `
+          SELECT
+            id,
+            username,
+            password_hash,
+            name,
+            role
+          FROM users
+          WHERE LOWER(username)=LOWER(?)
+          LIMIT 1
+          `,
+          [username]
+        );
 
       if (!user) {
         console.log(
-          "❌ No user found for username:",
+          "❌ User not found:",
           username
         );
 
@@ -501,121 +485,37 @@ app.post(
         });
       }
 
-      // --------------------------------------------------
-      // USER INFORMATION
-      // --------------------------------------------------
-
       console.log(
-        "👤 User information:",
+        "✅ User found:",
         {
           id: user.id,
           username: user.username,
-          name: user.name,
           role: user.role,
           hasPasswordHash:
-            Boolean(user.password_hash),
-          passwordHashLength:
-            user.password_hash
-              ? String(
-                  user.password_hash
-                ).length
-              : 0,
+            !!user.password_hash,
         }
       );
 
-      // --------------------------------------------------
-      // CHECK PASSWORD HASH
-      // --------------------------------------------------
-
-      if (
-        !user.password_hash ||
-        !String(
+      const validPassword =
+        await bcrypt.compare(
+          password,
           user.password_hash
-        ).trim()
-      ) {
-        console.error(
-          "❌ User has no password hash."
         );
-
-        return res.status(500).json({
-          message:
-            "User account does not have a valid password.",
-        });
-      }
-
-      // --------------------------------------------------
-      // COMPARE PASSWORD
-      // --------------------------------------------------
-
-      let validPassword = false;
-
-      try {
-        validPassword =
-          await bcrypt.compare(
-            password,
-            user.password_hash
-          );
-      } catch (bcryptError) {
-        console.error(
-          "❌ bcrypt comparison failed:",
-          bcryptError
-        );
-
-        return res.status(500).json({
-          message:
-            "Password verification failed.",
-        });
-      }
 
       console.log(
         "🔑 Password valid:",
         validPassword
       );
 
-      // --------------------------------------------------
-      // INVALID PASSWORD
-      // --------------------------------------------------
-
       if (!validPassword) {
-        console.log(
-          "❌ Invalid password for:",
-          user.username
-        );
-
         return res.status(401).json({
           message:
             "Invalid username or password.",
         });
       }
 
-      // --------------------------------------------------
-      // CREATE JWT
-      // --------------------------------------------------
-
       const access =
         issueToken(user);
-
-      if (!access) {
-        console.error(
-          "❌ JWT token was not generated."
-        );
-
-        return res.status(500).json({
-          message:
-            "Authentication token could not be generated.",
-        });
-      }
-
-      console.log(
-        "✅ Login successful:",
-        user.username
-      );
-
-      console.log("======================================");
-
-      // --------------------------------------------------
-      // RESPONSE
-      // --------------------------------------------------
 
       return res.json({
         access,
@@ -3776,10 +3676,6 @@ async function initializeSchema() {
 
 async function ensureDefaultOwner() {
   try {
-    // ------------------------------------------------------
-    // READ OWNER SETTINGS FROM ENVIRONMENT VARIABLES
-    // ------------------------------------------------------
-
     const username = String(
       process.env.OWNER_USERNAME || ""
     ).trim();
@@ -3792,11 +3688,6 @@ async function ensureDefaultOwner() {
       process.env.OWNER_NAME ||
         "SCOT IT Academy Owner"
     ).trim();
-
-    // ------------------------------------------------------
-    // DEBUG CONFIGURATION
-    // DO NOT PRINT THE ACTUAL PASSWORD
-    // ------------------------------------------------------
 
     console.log("🔐 Owner configuration:", {
       username,
@@ -3814,6 +3705,10 @@ async function ensureDefaultOwner() {
         "❌ OWNER_USERNAME or OWNER_PASSWORD is missing."
       );
 
+      console.error(
+        "👉 Add OWNER_USERNAME and OWNER_PASSWORD in Render Environment Variables."
+      );
+
       return;
     }
 
@@ -3822,10 +3717,48 @@ async function ensureDefaultOwner() {
     );
 
     // ------------------------------------------------------
+    // CHECK IF USERNAME IS ALREADY USED
+    // ------------------------------------------------------
+
+    const usernameUser = await first(
+      `
+      SELECT
+        id,
+        username,
+        role
+      FROM users
+      WHERE LOWER(username) = LOWER(?)
+      LIMIT 1
+      `,
+      [username]
+    );
+
+    // ------------------------------------------------------
+    // IF USERNAME EXISTS BUT BELONGS TO ADMIN
+    // ------------------------------------------------------
+
+    if (
+      usernameUser &&
+      String(usernameUser.role || "")
+        .toLowerCase() !== "owner"
+    ) {
+      console.error(
+        `❌ Username "${username}" is already used by another user.`
+      );
+
+      console.error(
+        "👉 Choose a different OWNER_USERNAME in Render."
+      );
+
+      return;
+    }
+
+    // ------------------------------------------------------
     // FIND EXISTING OWNER
     // ------------------------------------------------------
 
-    const owner = await first(`
+    const owner = await first(
+      `
       SELECT
         id,
         username,
@@ -3836,7 +3769,8 @@ async function ensureDefaultOwner() {
       WHERE role = 'Owner'
       ORDER BY id ASC
       LIMIT 1
-    `);
+      `
+    );
 
     // ------------------------------------------------------
     // CREATE OWNER IF NOT EXISTS
@@ -3847,39 +3781,48 @@ async function ensureDefaultOwner() {
         "👤 No Owner account found."
       );
 
+      console.log(
+        "🔐 Creating Owner account..."
+      );
+
       const passwordHash =
         await bcrypt.hash(
           password,
           12
         );
 
-      await db.execute(
-        `
-        INSERT INTO users
-        (
-          username,
-          password_hash,
-          name,
-          role
-        )
-        VALUES (?, ?, ?, 'Owner')
-        `,
-        [
-          username,
-          passwordHash,
-          name,
-        ]
+      const [result] =
+        await db.execute(
+          `
+          INSERT INTO users
+          (
+            username,
+            password_hash,
+            name,
+            role
+          )
+          VALUES (?, ?, ?, 'Owner')
+          `,
+          [
+            username,
+            passwordHash,
+            name,
+          ]
+        );
+
+      console.log(
+        `✅ Owner created successfully. ID: ${result.insertId}`
       );
 
       console.log(
-        `✅ Owner created successfully: ${username}`
+        `👤 Owner username: ${username}`
       );
 
       return;
     }
 
     // ------------------------------------------------------
-    // EXISTING OWNER INFORMATION
+    // EXISTING OWNER
     // ------------------------------------------------------
 
     console.log(
@@ -3889,78 +3832,51 @@ async function ensureDefaultOwner() {
         username: owner.username,
         name: owner.name,
         role: owner.role,
-
         hasPasswordHash:
-          Boolean(
-            owner.password_hash
-          ),
-
+          Boolean(owner.password_hash),
         passwordHashLength:
-          owner.password_hash
-            ? String(
-                owner.password_hash
-              ).length
-            : 0,
+          owner.password_hash?.length || 0,
       }
     );
 
-    // ------------------------------------------------------
-    // CHECK WHETHER UPDATE IS REQUIRED
-    // ------------------------------------------------------
-
     let updateRequired = false;
 
-    // Username check
+    // ------------------------------------------------------
+    // CHECK USERNAME
+    // ------------------------------------------------------
+
     if (
-      String(
-        owner.username || ""
-      ).trim() !== username
+      String(owner.username || "")
+        .trim() !== username
     ) {
       updateRequired = true;
-
-      console.log(
-        "🔄 Owner username needs synchronization."
-      );
-    }
-
-    // Name check
-    if (
-      String(
-        owner.name || ""
-      ).trim() !== name
-    ) {
-      updateRequired = true;
-
-      console.log(
-        "🔄 Owner name needs synchronization."
-      );
     }
 
     // ------------------------------------------------------
-    // PASSWORD CHECK
+    // CHECK NAME
+    // ------------------------------------------------------
+
+    if (
+      String(owner.name || "")
+        .trim() !== name
+    ) {
+      updateRequired = true;
+    }
+
+    // ------------------------------------------------------
+    // CHECK PASSWORD
     // ------------------------------------------------------
 
     let passwordMatches = false;
 
     if (
-      owner.password_hash &&
-      String(
-        owner.password_hash
-      ).trim()
+      owner.password_hash
     ) {
-      try {
-        passwordMatches =
-          await bcrypt.compare(
-            password,
-            owner.password_hash
-          );
-      } catch (passwordError) {
-        console.error(
-          "⚠️ Could not compare Owner password hash."
+      passwordMatches =
+        await bcrypt.compare(
+          password,
+          owner.password_hash
         );
-
-        passwordMatches = false;
-      }
     }
 
     console.log(
@@ -3970,23 +3886,17 @@ async function ensureDefaultOwner() {
 
     if (!passwordMatches) {
       updateRequired = true;
-
-      console.log(
-        "🔄 Owner password needs synchronization."
-      );
     }
 
     // ------------------------------------------------------
-    // UPDATE OWNER IF REQUIRED
+    // UPDATE OWNER
     // ------------------------------------------------------
 
     if (updateRequired) {
       console.log(
-        "🔄 Synchronizing Owner account..."
+        "🔄 Owner information needs synchronization..."
       );
 
-      // Keep existing hash if password is already correct.
-      // Otherwise generate a new bcrypt hash.
       const passwordHash =
         passwordMatches
           ? owner.password_hash
@@ -4016,23 +3926,13 @@ async function ensureDefaultOwner() {
       console.log(
         `✅ Owner synchronized successfully: ${username}`
       );
-
-      return;
+    } else {
+      console.log(
+        `✅ Owner already exists and is synchronized: ${username}`
+      );
     }
 
-    // ------------------------------------------------------
-    // NO UPDATE REQUIRED
-    // ------------------------------------------------------
-
-    console.log(
-      `✅ Owner already exists and is synchronized: ${username}`
-    );
-
   } catch (error) {
-    // ------------------------------------------------------
-    // ERROR HANDLING
-    // ------------------------------------------------------
-
     console.error(
       "❌ Failed to create/synchronize Owner:"
     );
@@ -4121,56 +4021,45 @@ app.use(
 
 async function startServer() {
   try {
-    console.log(
-      "Checking database connection..."
-    );
+    console.log("Checking database connection...");
 
-    await db.execute(
-      "SELECT 1"
-    );
+    await db.query("SELECT 1");
 
     console.log(
       "Database connection successful."
     );
 
-    // IMPORTANT
     await ensureDefaultOwner();
 
     const PORT =
-      process.env.PORT || 5000;
+      process.env.PORT || 10000;
 
     app.listen(
       PORT,
       "0.0.0.0",
       () => {
+        console.log("");
         console.log(
           "======================================"
         );
-
         console.log(
           "SCOT IT Academy API"
         );
-
         console.log(
           `Server running on port ${PORT}`
         );
-
         console.log(
           "Health: /health"
         );
-
         console.log(
           "Students: /api/students"
         );
-
         console.log(
           "Enquiries: /api/enquiries"
         );
-
         console.log(
           "Dashboard: /api/dashboard"
         );
-
         console.log(
           "======================================"
         );
@@ -4179,9 +4068,10 @@ async function startServer() {
 
   } catch (error) {
     console.error(
-      "❌ Server startup failed:",
-      error
+      "❌ Server startup failed:"
     );
+
+    console.error(error);
 
     process.exit(1);
   }

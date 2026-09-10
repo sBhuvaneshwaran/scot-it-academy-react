@@ -429,21 +429,12 @@ api.interceptors.response.use(
  */
 
 export const authApi = {
-
-  /*
-   * ====================================================
-   * LOGIN
-   * ====================================================
-   */
-
   login: async (data = {}) => {
-
     const username =
       String(
         data?.username || ""
       ).trim();
 
-    // Do NOT trim passwords.
     const password =
       String(
         data?.password || ""
@@ -455,23 +446,18 @@ export const authApi = {
       );
     }
 
-    /*
-     * --------------------------------------------------
-     * BACKEND MODE
-     * --------------------------------------------------
-     */
-
     if (!useDummyData) {
-
       const response =
-      await api.post("/auth/login", {
-        username,
-        password,
-      });
+        await api.post(
+          "/auth/login",
+          {
+            username,
+            password,
+          }
+        );
 
       const user =
-        response.data?.user ||
-        null;
+        response.data?.user || null;
 
       const token =
         getResponseToken(
@@ -490,24 +476,15 @@ export const authApi = {
         );
       }
 
-      /*
-       * Save REAL JWT
-       */
-
       setAuthSession(
         token,
         user
       );
 
-      /*
-       * Reset workspace for Admin
-       */
-
       if (
         String(
           user.role || ""
-        ).toLowerCase() ===
-        "admin"
+        ).toLowerCase() === "admin"
       ) {
         resetWorkspaceForNewAdmin(
           user.username
@@ -517,12 +494,7 @@ export const authApi = {
       return response;
     }
 
-    /*
-     * --------------------------------------------------
-     * DUMMY MODE
-     * --------------------------------------------------
-     */
-
+    // Dummy mode
     ensureOwnerAccount();
 
     const users =
@@ -537,12 +509,10 @@ export const authApi = {
             username.toLowerCase() &&
           String(
             user.password || ""
-          ) ===
-            password
+          ) === password
       );
 
     if (matchedUser) {
-
       const payloadUser = {
         id:
           matchedUser.id ||
@@ -565,17 +535,6 @@ export const authApi = {
         payloadUser
       );
 
-      if (
-        String(
-          matchedUser.role || ""
-        ).toLowerCase() ===
-        "admin"
-      ) {
-        resetWorkspaceForNewAdmin(
-          matchedUser.username
-        );
-      }
-
       return {
         data: {
           access:
@@ -587,69 +546,13 @@ export const authApi = {
       };
     }
 
-    /*
-     * Default Owner login
-     */
-
-    if (
-      username.toLowerCase() ===
-        "scot" &&
-      password ===
-        "scotitacademy@2026"
-    ) {
-
-      const ownerUser = {
-        id:
-          "owner",
-
-        username:
-          "SCOT",
-
-        name:
-          "SCOT IT Academy Owner",
-
-        role:
-          "Owner",
-      };
-
-      setAuthSession(
-        "demo-token",
-        ownerUser
-      );
-
-      return {
-        data: {
-          access:
-            "demo-token",
-
-          user:
-            ownerUser,
-        },
-      };
-    }
-
     throw new Error(
       "Invalid username or password."
     );
   },
 
-
-  /*
-   * ====================================================
-   * SIGNUP
-   * ====================================================
-   */
-
   signup: async (data = {}) => {
-
-    /*
-     * --------------------------------------------------
-     * BACKEND MODE
-     * --------------------------------------------------
-     */
-
     if (!useDummyData) {
-
       const response =
         await api.post(
           "/auth/signup",
@@ -657,25 +560,12 @@ export const authApi = {
         );
 
       const user =
-        response.data?.user ||
-        null;
+        response.data?.user || null;
 
       const token =
         getResponseToken(
           response.data
         );
-
-      console.log(
-        "Signup response:",
-        response.data
-      );
-
-      console.log(
-        "Signup JWT token:",
-        token
-          ? "TOKEN RECEIVED"
-          : "NO TOKEN RECEIVED"
-      );
 
       if (!user) {
         throw new Error(
@@ -683,246 +573,26 @@ export const authApi = {
         );
       }
 
-      /*
-       * Save authentication only
-       * when JWT is returned.
-       */
-
       if (token) {
-
         setAuthSession(
           token,
           user
         );
-
       } else {
-
-        setCurrentUser(
-          user
-        );
-
-        console.error(
-          "Backend signup did not return a JWT token."
-        );
+        setCurrentUser(user);
       }
 
       return response;
     }
 
-
-    /*
-     * --------------------------------------------------
-     * DUMMY MODE
-     * --------------------------------------------------
-     */
-
-    const username =
-      String(
-        data?.username || ""
-      ).trim();
-
-    const password =
-      String(
-        data?.password || ""
-      );
-
-    const name =
-      String(
-        data?.name ||
-          "SCOT IT Academy Owner"
-      ).trim();
-
-    const adminRows =
-      Array.isArray(
-        data?.admins
-      )
-        ? data.admins
-        : [];
-
-    if (!username || !password) {
-      throw new Error(
-        "Username and password are required."
-      );
-    }
-
-    const users =
-      ensureOwnerAccount();
-
-    const ownerEntry =
-      users.find(
-        (user) =>
-          String(
-            user.role || ""
-          ).toLowerCase() ===
-            "owner" ||
-          user.id ===
-            "owner"
-      );
-
-    /*
-     * Update existing Owner
-     */
-
-    if (ownerEntry) {
-
-      ownerEntry.username =
-        username;
-
-      ownerEntry.password =
-        password;
-
-      ownerEntry.name =
-        name ||
-        ownerEntry.name;
-
-    } else {
-
-      /*
-       * Create Owner
-       */
-
-      users.push({
-        id:
-          "owner",
-
-        username,
-
-        password,
-
-        name,
-
-        role:
-          "Owner",
-      });
-    }
-
-    const createdAdmins = [];
-
-    /*
-     * Create Admin accounts
-     */
-
-    adminRows.forEach(
-      (admin) => {
-
-        const adminName =
-          String(
-            admin?.name || ""
-          ).trim();
-
-        const adminUsername =
-          String(
-            admin?.username || ""
-          ).trim();
-
-        const adminPassword =
-          String(
-            admin?.password || ""
-          );
-
-        if (
-          !adminUsername ||
-          !adminPassword
-        ) {
-          return;
-        }
-
-        const duplicate =
-          users.find(
-            (user) =>
-              String(
-                user.username || ""
-              ).toLowerCase() ===
-              adminUsername.toLowerCase()
-          );
-
-        if (duplicate) {
-          throw new Error(
-            `Admin username "${adminUsername}" is already in use.`
-          );
-        }
-
-        const newAdmin = {
-
-          id:
-            `admin-${Date.now()}-${Math.random()
-              .toString(16)
-              .slice(2, 8)}`,
-
-          username:
-            adminUsername,
-
-          password:
-            adminPassword,
-
-          name:
-            adminName ||
-            adminUsername,
-
-          role:
-            "Admin",
-        };
-
-        users.push(
-          newAdmin
-        );
-
-        createdAdmins.push(
-          newAdmin
-        );
-      }
+    throw new Error(
+      "Dummy signup implementation goes here."
     );
-
-    saveStoredUsers(
-      users
-    );
-
-    const ownerUser = {
-
-      id:
-        ownerEntry
-          ? ownerEntry.id
-          : "owner",
-
-      username,
-
-      name,
-
-      role:
-        "Owner",
-    };
-
-    setAuthSession(
-      "demo-token",
-      ownerUser
-    );
-
-    return {
-      data: {
-
-        access:
-          "demo-token",
-
-        user:
-          ownerUser,
-
-        admins:
-          createdAdmins,
-      },
-    };
   },
-
-
-  /*
-   * ====================================================
-   * UPDATE OWNER USERNAME
-   * ====================================================
-   */
 
   updateOwner: async (
     data = {}
   ) => {
-
     const username =
       String(
         data?.username || ""
@@ -945,10 +615,7 @@ export const authApi = {
       );
     }
 
-    const token =
-      getAccessToken();
-
-    if (!token) {
+    if (!getAccessToken()) {
       throw new Error(
         "Authentication token is missing. Please login again."
       );
@@ -959,15 +626,13 @@ export const authApi = {
         "/auth/update-owner",
         {
           username,
-
           current_password:
             currentPassword,
         }
       );
 
     const user =
-      response.data?.user ||
-      null;
+      response.data?.user || null;
 
     const newToken =
       getResponseToken(
@@ -975,34 +640,21 @@ export const authApi = {
       );
 
     if (newToken) {
-
       setAuthSession(
         newToken,
         user ||
           getCurrentUser()
       );
-
     } else if (user) {
-
-      setCurrentUser(
-        user
-      );
+      setCurrentUser(user);
     }
 
     return response;
   },
 
-
-  /*
-   * ====================================================
-   * UPDATE OWNER PASSWORD
-   * ====================================================
-   */
-
   updatePassword: async (
     data = {}
   ) => {
-
     const currentPassword =
       String(
         data?.current_password || ""
@@ -1026,18 +678,14 @@ export const authApi = {
     }
 
     if (
-      newPassword.length <
-      6
+      newPassword.length < 6
     ) {
       throw new Error(
         "New password must contain at least 6 characters."
       );
     }
 
-    const token =
-      getAccessToken();
-
-    if (!token) {
+    if (!getAccessToken()) {
       throw new Error(
         "Authentication token is missing. Please login again."
       );
@@ -1056,8 +704,7 @@ export const authApi = {
       );
 
     const user =
-      response.data?.user ||
-      null;
+      response.data?.user || null;
 
     const newToken =
       getResponseToken(
@@ -1065,37 +712,23 @@ export const authApi = {
       );
 
     if (newToken) {
-
       setAuthSession(
         newToken,
-
         user ||
           getCurrentUser()
       );
-
     } else if (user) {
-
-      setCurrentUser(
-        user
-      );
+      setCurrentUser(user);
     }
 
     return response;
   },
-
-
-  /*
-   * ====================================================
-   * CURRENT USER
-   * ====================================================
-   */
 
   me: () =>
     api.get(
       "/auth/me"
     ),
 };
-
 
 /*
  * ======================================================
