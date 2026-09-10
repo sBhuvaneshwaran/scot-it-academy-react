@@ -428,54 +428,70 @@ app.get(
 
 app.post(
   "/api/auth/login",
-  async (
-    req,
-    res,
-    next
-  ) => {
+  async (req, res, next) => {
     try {
-      const username =
-        text(
-          req.body?.username
-        );
+      const username = text(
+        req.body?.username
+      );
 
       const password =
         req.body?.password || "";
 
+      console.log("======================================");
+      console.log("🔐 LOGIN REQUEST");
+      console.log("Username:", username);
       console.log(
-        "🔐 Login attempt:",
-        username
+        "Password received:",
+        Boolean(password)
+      );
+      console.log(
+        "Password length:",
+        String(password).length
       );
 
-      if (
-        !username ||
-        !password
-      ) {
+      // --------------------------------------------------
+      // VALIDATION
+      // --------------------------------------------------
+
+      if (!username || !password) {
+        console.log(
+          "❌ Username or password missing."
+        );
+
         return res.status(400).json({
           message:
             "Username and password are required.",
         });
       }
 
-      const user =
-        await first(
-          `
-          SELECT
-            id,
-            username,
-            password_hash,
-            name,
-            role
-          FROM users
-          WHERE LOWER(username)=LOWER(?)
-          LIMIT 1
-          `,
-          [username]
-        );
+      // --------------------------------------------------
+      // FIND USER
+      // --------------------------------------------------
+
+      const user = await first(
+        `
+        SELECT
+          id,
+          username,
+          password_hash,
+          name,
+          role
+        FROM users
+        WHERE LOWER(TRIM(username)) =
+              LOWER(TRIM(?))
+        LIMIT 1
+        `,
+        [username]
+      );
+
+      console.log(
+        "👤 Database user found:",
+        Boolean(user)
+      );
 
       if (!user) {
         console.log(
-          "❌ User not found:",
+          "❌ No user found for username:",
           username
         );
 
@@ -485,37 +501,121 @@ app.post(
         });
       }
 
+      // --------------------------------------------------
+      // USER INFORMATION
+      // --------------------------------------------------
+
       console.log(
-        "✅ User found:",
+        "👤 User information:",
         {
           id: user.id,
           username: user.username,
+          name: user.name,
           role: user.role,
           hasPasswordHash:
-            !!user.password_hash,
+            Boolean(user.password_hash),
+          passwordHashLength:
+            user.password_hash
+              ? String(
+                  user.password_hash
+                ).length
+              : 0,
         }
       );
 
-      const validPassword =
-        await bcrypt.compare(
-          password,
+      // --------------------------------------------------
+      // CHECK PASSWORD HASH
+      // --------------------------------------------------
+
+      if (
+        !user.password_hash ||
+        !String(
           user.password_hash
+        ).trim()
+      ) {
+        console.error(
+          "❌ User has no password hash."
         );
+
+        return res.status(500).json({
+          message:
+            "User account does not have a valid password.",
+        });
+      }
+
+      // --------------------------------------------------
+      // COMPARE PASSWORD
+      // --------------------------------------------------
+
+      let validPassword = false;
+
+      try {
+        validPassword =
+          await bcrypt.compare(
+            password,
+            user.password_hash
+          );
+      } catch (bcryptError) {
+        console.error(
+          "❌ bcrypt comparison failed:",
+          bcryptError
+        );
+
+        return res.status(500).json({
+          message:
+            "Password verification failed.",
+        });
+      }
 
       console.log(
         "🔑 Password valid:",
         validPassword
       );
 
+      // --------------------------------------------------
+      // INVALID PASSWORD
+      // --------------------------------------------------
+
       if (!validPassword) {
+        console.log(
+          "❌ Invalid password for:",
+          user.username
+        );
+
         return res.status(401).json({
           message:
             "Invalid username or password.",
         });
       }
 
+      // --------------------------------------------------
+      // CREATE JWT
+      // --------------------------------------------------
+
       const access =
         issueToken(user);
+
+      if (!access) {
+        console.error(
+          "❌ JWT token was not generated."
+        );
+
+        return res.status(500).json({
+          message:
+            "Authentication token could not be generated.",
+        });
+      }
+
+      console.log(
+        "✅ Login successful:",
+        user.username
+      );
+
+      console.log("======================================");
+
+      // --------------------------------------------------
+      // RESPONSE
+      // --------------------------------------------------
 
       return res.json({
         access,
@@ -4021,7 +4121,23 @@ app.use(
 
 async function startServer() {
   try {
-    await initializeSchema();
+    console.log(
+      "Checking database connection..."
+    );
+
+    await db.execute(
+      "SELECT 1"
+    );
+
+    console.log(
+      "Database connection successful."
+    );
+
+    // IMPORTANT
+    await ensureDefaultOwner();
+
+    const PORT =
+      process.env.PORT || 5000;
 
     app.listen(
       PORT,
@@ -4040,19 +4156,19 @@ async function startServer() {
         );
 
         console.log(
-          `Health: /health`
+          "Health: /health"
         );
 
         console.log(
-          `Students: /api/students`
+          "Students: /api/students"
         );
 
         console.log(
-          `Enquiries: /api/enquiries`
+          "Enquiries: /api/enquiries"
         );
 
         console.log(
-          `Dashboard: /api/dashboard`
+          "Dashboard: /api/dashboard"
         );
 
         console.log(
@@ -4060,26 +4176,18 @@ async function startServer() {
         );
       }
     );
+
   } catch (error) {
     console.error(
-      "======================================"
-    );
-
-    console.error(
-      "DATABASE CONNECTION FAILED"
-    );
-
-    console.error(
+      "❌ Server startup failed:",
       error
-    );
-
-    console.error(
-      "======================================"
     );
 
     process.exit(1);
   }
 }
+
+startServer();
 
 // ============================================================
 // GRACEFUL SHUTDOWN
