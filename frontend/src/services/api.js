@@ -464,13 +464,10 @@ export const authApi = {
     if (!useDummyData) {
 
       const response =
-        await api.post(
-          "/auth/login",
-          {
-            username,
-            password,
-          }
-        );
+      await api.post("/auth/login", {
+        username,
+        password,
+      });
 
       const user =
         response.data?.user ||
